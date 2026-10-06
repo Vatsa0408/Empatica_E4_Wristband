@@ -37,6 +37,18 @@ class StopRequested extends RecordingEvent {
   const StopRequested();
 }
 
+/// Marks a past session (identified by its on-disk folder) as exported. The
+/// data is already on disk continuously as it's recorded (see
+/// `E4SessionWriter`); this only flips a UI-facing flag in [RecordingState].
+class ExportRequested extends RecordingEvent {
+  const ExportRequested(this.sessionPath);
+
+  final String sessionPath;
+
+  @override
+  List<Object?> get props => [sessionPath];
+}
+
 /// Internal: raised from the transport's `samples` stream.
 class _SampleArrived extends RecordingEvent {
   const _SampleArrived(this.sample);
@@ -83,6 +95,35 @@ enum RecordingMode { continuous, manual }
 
 enum RecordingStatus { idle, recording, error }
 
+/// A finished recording session, kept in memory only (no new persistence
+/// layer — the CSVs are already on disk; this just drives the History tab).
+class CompletedSession extends Equatable {
+  const CompletedSession({
+    required this.startedAt,
+    required this.durationSec,
+    required this.counts,
+    required this.sessionPath,
+    this.exported = false,
+  });
+
+  final DateTime startedAt;
+  final double durationSec;
+  final Map<E4Signal, int> counts;
+  final String sessionPath;
+  final bool exported;
+
+  CompletedSession copyWith({bool? exported}) => CompletedSession(
+    startedAt: startedAt,
+    durationSec: durationSec,
+    counts: counts,
+    sessionPath: sessionPath,
+    exported: exported ?? this.exported,
+  );
+
+  @override
+  List<Object?> get props => [startedAt, durationSec, counts, sessionPath, exported];
+}
+
 class RecordingState extends Equatable {
   const RecordingState({
     this.mode = RecordingMode.manual,
@@ -91,6 +132,15 @@ class RecordingState extends Equatable {
     this.startedAt,
     this.counts = const {},
     this.latest = const {},
+    this.bvp = const [],
+    this.accX = const [],
+    this.accY = const [],
+    this.accZ = const [],
+    this.hr = const [],
+    this.eda = const [],
+    this.temp = const [],
+    this.ibi = const [],
+    this.history = const [],
     this.error,
   });
 
@@ -100,6 +150,22 @@ class RecordingState extends Equatable {
   final DateTime? startedAt;
   final Map<E4Signal, int> counts;
   final Map<E4Signal, E4Sample> latest;
+
+  /// Rolling buffers of recent raw values, for the dashboard's live charts.
+  /// Filled from every arriving sample regardless of recording status (see
+  /// [RecordingBloc] docs), capped at a fixed length per signal.
+  final List<double> bvp;
+  final List<double> accX;
+  final List<double> accY;
+  final List<double> accZ;
+  final List<double> hr;
+  final List<double> eda;
+  final List<double> temp;
+  final List<double> ibi;
+
+  /// Past recording sessions, most recent first.
+  final List<CompletedSession> history;
+
   final String? error;
 
   RecordingState copyWith({
@@ -111,6 +177,15 @@ class RecordingState extends Equatable {
     bool clearStartedAt = false,
     Map<E4Signal, int>? counts,
     Map<E4Signal, E4Sample>? latest,
+    List<double>? bvp,
+    List<double>? accX,
+    List<double>? accY,
+    List<double>? accZ,
+    List<double>? hr,
+    List<double>? eda,
+    List<double>? temp,
+    List<double>? ibi,
+    List<CompletedSession>? history,
     String? error,
     bool clearError = false,
   }) {
@@ -121,12 +196,38 @@ class RecordingState extends Equatable {
       startedAt: clearStartedAt ? null : (startedAt ?? this.startedAt),
       counts: counts ?? this.counts,
       latest: latest ?? this.latest,
+      bvp: bvp ?? this.bvp,
+      accX: accX ?? this.accX,
+      accY: accY ?? this.accY,
+      accZ: accZ ?? this.accZ,
+      hr: hr ?? this.hr,
+      eda: eda ?? this.eda,
+      temp: temp ?? this.temp,
+      ibi: ibi ?? this.ibi,
+      history: history ?? this.history,
       error: clearError ? null : (error ?? this.error),
     );
   }
 
   @override
-  List<Object?> get props => [mode, status, sessionPath, startedAt, counts, latest, error];
+  List<Object?> get props => [
+    mode,
+    status,
+    sessionPath,
+    startedAt,
+    counts,
+    latest,
+    bvp,
+    accX,
+    accY,
+    accZ,
+    hr,
+    eda,
+    temp,
+    ibi,
+    history,
+    error,
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +254,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     on<RecordingModeChanged>(_onModeChanged);
     on<StartRequested>(_onStartRequested);
     on<StopRequested>(_onStopRequested);
+    on<ExportRequested>(_onExportRequested);
     on<_SampleArrived>(_onSampleArrived);
     on<_ConnectionChanged>(_onConnectionChanged);
     on<_WriteFailed>(_onWriteFailed);
@@ -182,6 +284,29 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   bool _dirty = false;
   Map<E4Signal, int> _counts = {};
   Map<E4Signal, E4Sample> _latest = {};
+  List<CompletedSession> _history = [];
+
+  // Rolling chart buffers — filled from every arriving sample regardless of
+  // recording status, capped at a fixed length per signal (see
+  // `RecordingState.bvp` etc. docs).
+  final List<double> _bvp = [];
+  final List<double> _accX = [];
+  final List<double> _accY = [];
+  final List<double> _accZ = [];
+  final List<double> _hr = [];
+  final List<double> _eda = [];
+  final List<double> _temp = [];
+  final List<double> _ibi = [];
+
+  static const _bvpMax = 60;
+  static const _accMax = 60;
+  static const _trendMax = 40;
+  static const _ibiMax = 20;
+
+  void _pushBuffer(List<double> buffer, double value, int max) {
+    buffer.add(value);
+    if (buffer.length > max) buffer.removeAt(0);
+  }
 
   Future<void> _onModeChanged(RecordingModeChanged event, Emitter<RecordingState> emit) async {
     if (_writer != null) {
@@ -205,8 +330,28 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   }
 
   Future<void> _onSampleArrived(_SampleArrived event, Emitter<RecordingState> emit) async {
-    _counts[event.sample.signal] = (_counts[event.sample.signal] ?? 0) + 1;
-    _latest[event.sample.signal] = event.sample;
+    final sample = event.sample;
+    _counts[sample.signal] = (_counts[sample.signal] ?? 0) + 1;
+    _latest[sample.signal] = sample;
+    switch (sample.signal) {
+      case E4Signal.bvp:
+        _pushBuffer(_bvp, sample.values.single, _bvpMax);
+      case E4Signal.acc:
+        _pushBuffer(_accX, sample.values[0], _accMax);
+        _pushBuffer(_accY, sample.values[1], _accMax);
+        _pushBuffer(_accZ, sample.values[2], _accMax);
+      case E4Signal.hr:
+        _pushBuffer(_hr, sample.values.single, _trendMax);
+      case E4Signal.eda:
+        _pushBuffer(_eda, sample.values.single, _trendMax);
+      case E4Signal.temp:
+        _pushBuffer(_temp, sample.values.single, _trendMax);
+      case E4Signal.ibi:
+        _pushBuffer(_ibi, sample.values.single, _ibiMax);
+      case E4Signal.tag:
+      case E4Signal.battery:
+        break;
+    }
     _dirty = true;
 
     final writer = _writer;
@@ -244,7 +389,28 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   void _onTick(_Tick event, Emitter<RecordingState> emit) {
     if (!_dirty) return;
     _dirty = false;
-    emit(state.copyWith(counts: Map.of(_counts), latest: Map.of(_latest)));
+    emit(
+      state.copyWith(
+        counts: Map.of(_counts),
+        latest: Map.of(_latest),
+        bvp: List.of(_bvp),
+        accX: List.of(_accX),
+        accY: List.of(_accY),
+        accZ: List.of(_accZ),
+        hr: List.of(_hr),
+        eda: List.of(_eda),
+        temp: List.of(_temp),
+        ibi: List.of(_ibi),
+      ),
+    );
+  }
+
+  void _onExportRequested(ExportRequested event, Emitter<RecordingState> emit) {
+    _history = [
+      for (final session in _history)
+        session.sessionPath == event.sessionPath ? session.copyWith(exported: true) : session,
+    ];
+    emit(state.copyWith(history: List.of(_history)));
   }
 
   Future<void> _startSession(String deviceId, Emitter<RecordingState> emit) async {
@@ -286,7 +452,27 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       emit(state.copyWith(status: RecordingStatus.error, error: error.toString()));
       return;
     }
-    emit(state.copyWith(status: RecordingStatus.idle, clearSessionPath: true, clearStartedAt: true));
+    final startedAt = state.startedAt;
+    final sessionPath = state.sessionPath;
+    if (startedAt != null && sessionPath != null) {
+      _history = [
+        CompletedSession(
+          startedAt: startedAt,
+          durationSec: DateTime.now().difference(startedAt).inMilliseconds / 1000,
+          counts: Map.of(_counts),
+          sessionPath: sessionPath,
+        ),
+        ..._history,
+      ];
+    }
+    emit(
+      state.copyWith(
+        status: RecordingStatus.idle,
+        clearSessionPath: true,
+        clearStartedAt: true,
+        history: List.of(_history),
+      ),
+    );
   }
 
   @override

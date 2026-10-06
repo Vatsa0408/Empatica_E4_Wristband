@@ -93,6 +93,35 @@ void main() {
         expect(v, closeTo(0.0, 1e-9));
       }
     });
+
+    test('captured real packets decode to finite, bounded readings', () {
+      // Three consecutive 20-byte BVP notifications captured from a real E4,
+      // fed through one decoder instance (stateful, so order matters). Not
+      // enough samples here (~0.5s) for a full cardiac cycle, so this only
+      // guards against the regression (raw deltas read as absolute levels)
+      // blowing up into NaN/Infinity or producing more than 11 samples/packet
+      // — not a real HR assertion.
+      final packets = [
+        _bytes([0xff, 0xfc, 0x0f, 0xff, 0xe0, 0x00, 0x82, 0xfe, 0x04, 0x0f, 0xcf, 0xe0, 0x00, 0x03, 0x03, 0xf7, 0xf8, 0x20, 0x1f, 0xed]),
+        _bytes([0x00, 0x0c, 0x1f, 0xef, 0xe0, 0x3f, 0xfc, 0x04, 0x17, 0xff, 0xf0, 0x00, 0x3f, 0x7e, 0x04, 0x07, 0xf0, 0x0f, 0xe0, 0x2e]),
+        _bytes([0x03, 0xfc, 0x00, 0x00, 0x20, 0x3f, 0x82, 0x07, 0xfc, 0x00, 0x1f, 0xdf, 0xc0, 0x7e, 0x02, 0x0f, 0xef, 0xf0, 0x40, 0x6f]),
+      ];
+
+      final decoder = BvpDecoder();
+      final detector = HrIbiPeakDetector();
+      var t = 0.0;
+      for (final packet in packets) {
+        final readings = decoder.decode(packet);
+        expect(readings.length, lessThanOrEqualTo(11));
+        for (final value in readings) {
+          expect(value.isFinite, isTrue);
+          for (final sample in detector.addBvpSample(t, value)) {
+            expect(sample.values.single.isFinite, isTrue);
+          }
+          t += 1 / 64.0;
+        }
+      }
+    });
   });
 
   group('HrIbiPeakDetector', () {
@@ -123,6 +152,74 @@ void main() {
       }
       for (final sample in hrSamples) {
         expect(sample.values.single, closeTo(60.0 / periodSeconds, 5.0));
+      }
+    });
+
+    test('regression: ~1.2Hz pulse yields ~72bpm, not the old >120-130bpm', () {
+      const periodSeconds = 1 / 1.2; // 72 bpm
+      const rateHz = 64.0;
+      const durationSeconds = 8.0;
+
+      final detector = HrIbiPeakDetector();
+      final ibiSamples = <E4Sample>[];
+      final hrSamples = <E4Sample>[];
+
+      final sampleCount = (durationSeconds * rateHz).round();
+      for (var i = 0; i < sampleCount; i++) {
+        final t = i / rateHz;
+        final value = math.sin(2 * math.pi * t / periodSeconds);
+        for (final sample in detector.addBvpSample(t, value)) {
+          (sample.signal == E4Signal.ibi ? ibiSamples : hrSamples).add(sample);
+        }
+      }
+
+      expect(ibiSamples, isNotEmpty);
+      expect(hrSamples, isNotEmpty);
+      for (final sample in ibiSamples) {
+        expect(sample.values.single, closeTo(periodSeconds, 0.05));
+      }
+      for (final sample in hrSamples) {
+        expect(sample.values.single, closeTo(72.0, 5.0));
+      }
+    });
+
+    test('regression: motion-artifact spike recovers to ~72bpm, not stuck at 12-13bpm', () {
+      const periodSeconds = 1 / 1.2; // 72 bpm
+      const rateHz = 64.0;
+
+      final detector = HrIbiPeakDetector();
+      final hrSamples = <E4Sample>[];
+      var t = 0.0;
+
+      void feed(double value) {
+        for (final sample in detector.addBvpSample(t, value)) {
+          if (sample.signal == E4Signal.hr) hrSamples.add(sample);
+        }
+        t += 1 / rateHz;
+      }
+
+      // A few seconds of clean pulse to establish a normal envelope.
+      for (var i = 0; i < (2.0 * rateHz).round(); i++) {
+        feed(math.sin(2 * math.pi * t / periodSeconds));
+      }
+
+      // Motion artifact: BVP swings far outside any physiological range
+      // (~10000, per CLAUDE.md/plan doc) for ~0.2s.
+      for (var i = 0; i < (0.2 * rateHz).round(); i++) {
+        feed(i.isEven ? 10000.0 : -10000.0);
+      }
+
+      // Resume the same clean pulse for several seconds.
+      for (var i = 0; i < (8.0 * rateHz).round(); i++) {
+        feed(math.sin(2 * math.pi * t / periodSeconds));
+      }
+
+      expect(hrSamples, isNotEmpty);
+      // Only the tail is asserted: the beat(s) spanning the spike's
+      // recovery window are expected to be reset/discarded (no HR emitted
+      // for an implausible gap), not asserted on here.
+      for (final sample in hrSamples.skip(hrSamples.length - 3)) {
+        expect(sample.values.single, closeTo(72.0, 5.0));
       }
     });
   });

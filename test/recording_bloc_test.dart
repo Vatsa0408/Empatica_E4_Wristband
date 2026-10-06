@@ -28,7 +28,11 @@ class _FixedSessionPaths implements SessionPaths {
   }
 }
 
-Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 10));
+// 10ms was too tight: `_startSession`/`_stopSession` do real directory/file
+// I/O (see `E4SessionWriter`), which occasionally outruns a fixed short
+// delay on Windows and made these tests flaky. 150ms gives that I/O real
+// headroom without resorting to a stream-polling helper.
+Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 150));
 
 void main() {
   late MockE4Transport transport;
@@ -164,6 +168,51 @@ void main() {
     expect(bloc.state.mode, RecordingMode.continuous);
     expect(bloc.state.status, RecordingStatus.idle);
     expect(bloc.state.sessionPath, isNull);
+
+    await bloc.close();
+    await blocs.connection.close();
+  });
+
+  test('rolling chart buffers cap at their max length', () async {
+    final blocs = build();
+    final bloc = blocs.recording;
+    await connect(blocs.connection);
+
+    for (var i = 0; i < 65; i++) {
+      samplesController.add(E4Sample(signal: E4Signal.bvp, timestamp: i.toDouble(), values: [i.toDouble()]));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    expect(bloc.state.bvp.length, 60); // capped, not 65
+    expect(bloc.state.bvp.last, 64.0); // most recent sample kept, oldest dropped
+
+    await bloc.close();
+    await blocs.connection.close();
+  });
+
+  test('stopping a session records it in history; exporting marks it exported', () async {
+    final blocs = build();
+    final bloc = blocs.recording;
+    await connect(blocs.connection);
+    bloc.add(const StartRequested());
+    await _settle();
+    final sessionPath = bloc.state.sessionPath!;
+
+    samplesController.add(const E4Sample(signal: E4Signal.hr, timestamp: 1.0, values: [70.0]));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    bloc.add(const StopRequested());
+    await _settle();
+
+    expect(bloc.state.history, hasLength(1));
+    final session = bloc.state.history.single;
+    expect(session.sessionPath, sessionPath);
+    expect(session.counts[E4Signal.hr], 1);
+    expect(session.exported, isFalse);
+
+    bloc.add(ExportRequested(sessionPath));
+    await _settle();
+    expect(bloc.state.history.single.exported, isTrue);
 
     await bloc.close();
     await blocs.connection.close();

@@ -1,0 +1,116 @@
+2026-09-30T10:40:21.890578Z ACC.csv: gap-padded row 6
+2026-09-30T10:40:21.922488Z BVP.csv: out-of-order sample at row 9 (already wrote 11 rows) — dropped
+2026-09-30T10:40:21.923034Z BVP.csv: out-of-order sample at row 10 (already wrote 11 rows) — dropped
+2026-09-30T10:40:22.044289Z ACC.csv: out-of-order sample at row 12 (already wrote 13 rows) — dropped
+2026-09-30T10:40:22.104002Z BVP.csv: gap-padded row 20
+2026-09-30T10:40:22.287328Z BVP.csv: gap-padded row 32
+2026-09-30T10:40:22.289786Z HR.csv: out-of-order sample at row 0 (already wrote 1 rows) — dropped
+2026-09-30T10:40:22.436312Z BVP.csv: out-of-order sample at row 42 (already wrote 44 rows) — dropped
+2026-09-30T10:40:22.436935Z BVP.csv: out-of-order sample at row 43 (already wrote 44 rows) — dropped
+2026-09-30T10:40:22.647255Z ACC.csv: gap-padded row 30
+2026-09-30T10:40:22.650819Z BVP.csv: gap-padded row 53
+2026-09-30T10:40:22.651046Z BVP.csv: gap-padded row 54
+2026-09-30T10:40:22.651260Z BVP.csv: gap-padded row 53
+2026-09-30T10:40:22.651378Z BVP.csv: gap-padded row 55
+2026-09-30T10:40:22.651422Z BVP.csv: gap-padded row 54
+2026-09-30T10:40:22.651497Z BVP.csv: gap-padded row 53
+2026-09-30T10:40:22.651838Z BVP.csv: gap-padded row 55
+2026-09-30T10:40:22.651895Z BVP.csv: gap-padded row 54
+2026-09-30T10:40:22.651982Z BVP.csv: gap-padded row 57
+2026-09-30T10:40:22.652205Z BVP.csv: gap-padded row 56
+2026-09-30T10:40:22.652290Z BVP.csv: gap-padded row 55
+2026-09-30T10:40:22.652331Z BVP.csv: gap-padded row 58
+2026-09-30T10:40:22.652424Z BVP.csv: gap-padded row 57
+2026-09-30T10:40:22.652871Z BVP.csv: gap-padded row 56
+2026-09-30T10:40:22.653033Z BVP.csv: gap-padded row 58
+2026-09-30T10:40:22.653119Z BVP.csv: gap-padded row 60
+2026-09-30T10:40:22.653208Z BVP.csv: gap-padded row 57
+2026-09-30T10:40:22.653251Z BVP.csv: gap-padded row 59
+2026-09-30T10:40:22.653814Z BVP.csv: gap-padded row 61
+2026-09-30T10:40:22.654002Z BVP.csv: gap-padded row 62
+2026-09-30T10:40:22.654094Z BVP.csv: gap-padded row 61
+2026-09-30T10:40:22.654427Z BVP.csv: gap-padded row 62
+2026-09-30T10:40:22.654533Z BVP.csv: gap-padded row 64
+2026-09-30T10:40:22.654619Z BVP.csv: gap-padded row 63
+2026-09-30T10:40:22.829115Z BVP.csv: gap-padded row 65
+2026-09-30T10:40:22.829385Z BVP.csv: gap-padded row 66
+2026-09-30T10:40:23.006456Z BVP.csv: gap-padded row 78
+2026-09-30T10:40:23.136002Z BVP.csv: out-of-order sample at row 87 (already wrote 90 rows) — dropped
+2026-09-30T10:40:23.136326Z BVP.csv: out-of-order sample at row 88 (already wrote 90 rows) — dropped
+2026-09-30T10:40:23.136418Z BVP.csv: out-of-order sample at row 89 (already wrote 90 rows) — dropped
+2026-09-30T10:40:23.136944Z HR.csv: out-of-order sample at row 1 (already wrote 2 rows) — dropped
+2026-09-30T10:40:23.154856Z ACC.csv: out-of-order sample at row 48 (already wrote 49 rows) — dropped
+2026-09-30T10:40:23.338393Z BVP.csv: gap-padded row 98
+2026-09-30T10:40:23.338694Z BVP.csv: gap-padded row 99
+2026-09-30T10:40:23.338798Z BVP.csv: gap-padded row 98
+2026-09-30T10:40:23.339147Z BVP.csv: gap-padded row 99
+2026-09-30T10:40:23.339234Z BVP.csv: gap-padded row 101
+2026-09-30T10:40:23.339323Z BVP.csv: gap-padded row 100
+2026-09-30T10:40:23.339718Z BVP.csv: gap-padded row 102
+2026-09-30T10:40:23.339819Z BVP.csv: gap-padded row 103
+2026-09-30T10:40:23.339902Z BVP.csv: gap-padded row 102
+2026-09-30T10:40:23.340038Z BVP.csv: gap-padded row 103
+2026-09-30T10:40:23.340133Z BVP.csv: gap-padded row 105
+2026-09-30T10:40:23.340220Z BVP.csv: gap-padded row 104
+2026-09-30T10:40:23.340503Z BVP.csv: gap-padded row 106
+2026-09-30T10:40:23.340598Z BVP.csv: gap-padded row 107
+2026-09-30T10:40:23.340672Z BVP.csv: gap-padded row 106
+2026-09-30T10:40:23.340806Z BVP.csv: gap-padded row 107
+2026-09-30T10:40:23.340891Z BVP.csv: gap-padded row 109
+2026-09-30T10:40:23.340962Z BVP.csv: gap-padded row 108
+2026-09-30T10:40:23.817409Z BVP.csv: out-of-order sample at row 131 (already wrote 132 rows) — dropped
+2026-09-30T10:40:23.996891Z HR.csv: out-of-order sample at row 2 (already wrote 3 rows) — dropped
+2026-09-30T10:40:24.117739Z ACC.csv: gap-padded row 78
+2026-09-30T10:40:24.175270Z BVP.csv: gap-padded row 153
+2026-09-30T10:40:24.299416Z ACC.csv: out-of-order sample at row 84 (already wrote 85 rows) — dropped
+2026-09-30T10:40:24.362108Z HR.csv: out-of-order sample at row 2 (already wrote 3 rows) — dropped
+2026-09-30T10:40:24.505913Z BVP.csv: out-of-order sample at row 175 (already wrote 176 rows) — dropped
+2026-09-30T10:40:24.688940Z ACC.csv: gap-padded row 96
+2026-09-30T10:40:24.691565Z BVP.csv: gap-padded row 186
+2026-09-30T10:40:25.052558Z ACC.csv: out-of-order sample at row 108 (already wrote 109 rows) — dropped
+2026-09-30T10:40:25.107346Z TEMP.csv: gap-padded row 4
+2026-09-30T10:40:25.108055Z TEMP.csv: gap-padded row 5
+2026-09-30T10:40:25.108309Z TEMP.csv: gap-padded row 4
+2026-09-30T10:40:25.108418Z TEMP.csv: gap-padded row 6
+2026-09-30T10:40:25.108481Z TEMP.csv: gap-padded row 5
+2026-09-30T10:40:25.108568Z TEMP.csv: gap-padded row 4
+2026-09-30T10:40:25.108740Z TEMP.csv: gap-padded row 7
+2026-09-30T10:40:25.108818Z TEMP.csv: gap-padded row 6
+2026-09-30T10:40:25.108865Z TEMP.csv: gap-padded row 5
+2026-09-30T10:40:25.108958Z TEMP.csv: gap-padded row 4
+2026-09-30T10:40:25.109221Z TEMP.csv: gap-padded row 7
+2026-09-30T10:40:25.109275Z TEMP.csv: gap-padded row 6
+2026-09-30T10:40:25.109332Z TEMP.csv: gap-padded row 5
+2026-09-30T10:40:25.109375Z TEMP.csv: gap-padded row 8
+2026-09-30T10:40:25.109423Z TEMP.csv: gap-padded row 7
+2026-09-30T10:40:25.109463Z TEMP.csv: gap-padded row 6
+2026-09-30T10:40:25.109606Z TEMP.csv: gap-padded row 8
+2026-09-30T10:40:25.109653Z TEMP.csv: gap-padded row 7
+2026-09-30T10:40:25.109707Z TEMP.csv: gap-padded row 9
+2026-09-30T10:40:25.109746Z TEMP.csv: gap-padded row 8
+2026-09-30T10:40:25.109921Z TEMP.csv: gap-padded row 9
+2026-09-30T10:40:25.109974Z TEMP.csv: gap-padded row 10
+2026-09-30T10:40:25.194679Z BVP.csv: out-of-order sample at row 219 (already wrote 220 rows) — dropped
+2026-09-30T10:40:25.409564Z BVP.csv: gap-padded row 230
+2026-09-30T10:40:25.409840Z BVP.csv: gap-padded row 231
+2026-09-30T10:40:25.409962Z BVP.csv: gap-padded row 230
+2026-09-30T10:40:25.410525Z BVP.csv: gap-padded row 232
+2026-09-30T10:40:25.410581Z BVP.csv: gap-padded row 231
+2026-09-30T10:40:25.410684Z BVP.csv: gap-padded row 230
+2026-09-30T10:40:25.410924Z BVP.csv: gap-padded row 232
+2026-09-30T10:40:25.410972Z BVP.csv: gap-padded row 231
+2026-09-30T10:40:25.411050Z BVP.csv: gap-padded row 234
+2026-09-30T10:40:25.411136Z BVP.csv: gap-padded row 233
+2026-09-30T10:40:25.411173Z BVP.csv: gap-padded row 232
+2026-09-30T10:40:25.411214Z BVP.csv: gap-padded row 235
+2026-09-30T10:40:25.411278Z BVP.csv: gap-padded row 234
+2026-09-30T10:40:25.411463Z BVP.csv: gap-padded row 233
+2026-09-30T10:40:25.411568Z BVP.csv: gap-padded row 235
+2026-09-30T10:40:25.411638Z BVP.csv: gap-padded row 237
+2026-09-30T10:40:25.411717Z BVP.csv: gap-padded row 234
+2026-09-30T10:40:25.411764Z BVP.csv: gap-padded row 236
+2026-09-30T10:40:25.412240Z HR.csv: out-of-order sample at row 3 (already wrote 4 rows) — dropped
+2026-09-30T10:40:25.412408Z BVP.csv: gap-padded row 238
+2026-09-30T10:40:25.554658Z BVP.csv: out-of-order sample at row 242 (already wrote 244 rows) — dropped
+2026-09-30T10:40:25.555129Z BVP.csv: out-of-order sample at row 243 (already wrote 244 rows) — dropped
+2026-09-30T10:40:25.617063Z ACC.csv: gap-padded row 126

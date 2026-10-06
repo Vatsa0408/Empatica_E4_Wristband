@@ -19,7 +19,7 @@ class E4App extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'E4 Integrator',
+        title: 'Empatica Data Collector',
         theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
         home: const HomePage(),
       ),

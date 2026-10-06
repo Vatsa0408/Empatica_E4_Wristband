@@ -49,3 +49,5 @@ app.*.map.json
 # Claude related ignore
 .claude/
 docs/
+.serena/
+CLAUDE.md

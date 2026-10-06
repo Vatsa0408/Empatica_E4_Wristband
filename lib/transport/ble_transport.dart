@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 import '../model/e4_sample.dart';
@@ -36,6 +36,13 @@ class BleTransport implements E4Transport {
   StreamSubscription<bool>? _connectionSubscription;
   String? _deviceId;
 
+  /// Guards against re-entrant connect() calls (e.g. a double-tap firing
+  /// two concurrent `ConnectRequested` events — flutter_bloc's default
+  /// transformer processes events concurrently) stacking a second set of
+  /// BLE notification listeners on top of the first, which is what causes
+  /// every characteristic notification to be delivered twice.
+  Future<void>? _connectFuture;
+
   BvpDecoder _bvpDecoder = BvpDecoder();
   HrIbiPeakDetector _hrIbi = HrIbiPeakDetector();
 
@@ -66,7 +73,16 @@ class BleTransport implements E4Transport {
   }
 
   @override
-  Future<void> connect(String deviceId) async {
+  Future<void> connect(String deviceId) {
+    return _connectFuture ??= _doConnect(deviceId).whenComplete(() => _connectFuture = null);
+  }
+
+  Future<void> _doConnect(String deviceId) async {
+    // Tear down any still-active subscriptions from a previous connect
+    // before subscribing again, so notification listeners never stack.
+    if (_deviceId != null) {
+      await disconnect();
+    }
     _deviceId = deviceId;
     _bvpDecoder = BvpDecoder();
     _hrIbi = HrIbiPeakDetector();
@@ -81,8 +97,10 @@ class BleTransport implements E4Transport {
 
     final services = await UniversalBle.discoverServices(deviceId);
     final serviceForChar = <String, String>{};
+    debugPrint('[E4 RAW] connected to $deviceId, ${services.length} services');
     for (final service in services) {
       for (final characteristic in service.characteristics) {
+        debugPrint('[E4 RAW] service ${service.uuid} char ${characteristic.uuid} props=${characteristic.properties}');
         serviceForChar[characteristic.uuid] = service.uuid;
       }
     }
@@ -100,6 +118,7 @@ class BleTransport implements E4Transport {
       final command = ByteData(5)
         ..setUint8(0, 0x01)
         ..setUint32(1, nowSeconds, Endian.little);
+      _logRaw('WRITE cmd $_cmdCharUuid', command.buffer.asUint8List());
       await UniversalBle.write(deviceId, cmdService, _cmdCharUuid, command.buffer.asUint8List());
     }
 
@@ -139,7 +158,10 @@ class BleTransport implements E4Transport {
     try {
       await UniversalBle.subscribeNotifications(deviceId, batteryService.uuid, _batteryLevelCharUuid);
       final subscription = UniversalBle.characteristicValueStream(deviceId, _batteryLevelCharUuid).listen(
-        (bytes) => _onBattery(bytes),
+        (bytes) {
+          _logRaw('battery $_batteryLevelCharUuid', bytes);
+          _onBattery(bytes);
+        },
         onError: (Object error, StackTrace stackTrace) => _samplesController.addError(error, stackTrace),
       );
       _notificationSubscriptions.add(subscription);
@@ -161,10 +183,18 @@ class BleTransport implements E4Transport {
     }
     await UniversalBle.subscribeNotifications(deviceId, serviceUuid, characteristicUuid);
     final subscription = UniversalBle.characteristicValueStream(deviceId, characteristicUuid).listen(
-      onData,
+      (bytes) {
+        _logRaw(characteristicUuid, bytes);
+        onData(bytes);
+      },
       onError: (Object error, StackTrace stackTrace) => _samplesController.addError(error, stackTrace),
     );
     _notificationSubscriptions.add(subscription);
+  }
+
+  void _logRaw(String label, Uint8List bytes) {
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    debugPrint('[E4 RAW] ${_now().toStringAsFixed(3)} $label len=${bytes.length} $hex');
   }
 
   double _now() => DateTime.now().millisecondsSinceEpoch / 1000.0;

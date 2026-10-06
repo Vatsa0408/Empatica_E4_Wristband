@@ -119,44 +119,77 @@ class ConnectionBloc extends Bloc<ConnectionEvent, ConnectionState> {
 
   E4Transport get transport => _transport;
 
-  Future<void> _onDiscoverRequested(DiscoverRequested event, Emitter<ConnectionState> emit) async {
-    emit(state.copyWith(status: ConnectionStatus.discovering, clearError: true));
+  Future<void> _onDiscoverRequested(
+    DiscoverRequested event,
+    Emitter<ConnectionState> emit,
+  ) async {
+    emit(
+      state.copyWith(status: ConnectionStatus.discovering, clearError: true),
+    );
     try {
       final devices = await _transport.discover();
       emit(state.copyWith(status: ConnectionStatus.idle, devices: devices));
     } on Object catch (error) {
-      emit(state.copyWith(status: ConnectionStatus.error, error: error.toString()));
+      emit(
+        state.copyWith(status: ConnectionStatus.error, error: error.toString()),
+      );
     }
   }
 
-  Future<void> _onConnectRequested(ConnectRequested event, Emitter<ConnectionState> emit) async {
+  Future<void> _onConnectRequested(
+    ConnectRequested event,
+    Emitter<ConnectionState> emit,
+  ) async {
     emit(state.copyWith(status: ConnectionStatus.connecting, clearError: true));
     try {
       await _transport.connect(event.deviceId);
-      emit(state.copyWith(status: ConnectionStatus.connected, deviceId: event.deviceId));
+      emit(
+        state.copyWith(
+          status: ConnectionStatus.connected,
+          deviceId: event.deviceId,
+        ),
+      );
     } on Object catch (error) {
-      emit(state.copyWith(status: ConnectionStatus.error, error: error.toString()));
+      emit(
+        state.copyWith(status: ConnectionStatus.error, error: error.toString()),
+      );
     }
   }
 
-  Future<void> _onDisconnectRequested(DisconnectRequested event, Emitter<ConnectionState> emit) async {
+  Future<void> _onDisconnectRequested(
+    DisconnectRequested event,
+    Emitter<ConnectionState> emit,
+  ) async {
     try {
       await _transport.disconnect();
     } on Object catch (error) {
-      emit(state.copyWith(status: ConnectionStatus.error, error: error.toString()));
+      emit(
+        state.copyWith(status: ConnectionStatus.error, error: error.toString()),
+      );
       return;
     }
     emit(state.copyWith(status: ConnectionStatus.idle, clearDeviceId: true));
   }
 
-  void _onTransportConnectionChanged(_TransportConnectionChanged event, Emitter<ConnectionState> emit) {
+  void _onTransportConnectionChanged(
+    _TransportConnectionChanged event,
+    Emitter<ConnectionState> emit,
+  ) {
     if (!event.isConnected && state.status == ConnectionStatus.connected) {
       emit(state.copyWith(status: ConnectionStatus.idle, clearDeviceId: true));
     }
   }
 
-  void _onTransportFailed(_TransportFailed event, Emitter<ConnectionState> emit) {
-    emit(state.copyWith(status: ConnectionStatus.error, error: event.error.toString()));
+  void _onTransportFailed(
+    _TransportFailed event,
+    Emitter<ConnectionState> emit,
+  ) {
+    emit(
+      state.copyWith(
+        status: ConnectionStatus.error,
+        error: event.error.toString(),
+      ),
+    );
   }
 
   @override

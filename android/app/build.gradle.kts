@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.example.e4_integrator"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
+    // compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -19,7 +20,9 @@ android {
         applicationId = "com.example.e4_integrator"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Raised to 24: path_provider requires SDK 24+, and BLE is now the
+        // sole E4 transport (see CLAUDE.md).
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

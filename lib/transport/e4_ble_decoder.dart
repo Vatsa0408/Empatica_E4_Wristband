@@ -67,11 +67,30 @@ const double _bvpScaleFactor = 10.0;
 class BvpDecoder {
   final Queue<double> _fir1 = Queue.of(List.filled(_firCoefficients.length, 0.0));
   final Queue<double> _fir2 = Queue.of(List.filled(_firCoefficients.length, 0.0));
-  final Queue<double> _fir3 = Queue.of(List.filled(_firCoefficients.length, 0.0));
   double _kalmanP = 1.0;
   double _kalmanX = 0.0;
   static const double _kalmanQ = 0.01;
   static const double _kalmanR = 0.1;
+
+  // decoded[] out of _unpack7Bit is a stream of signed 7-bit *deltas*, not
+  // absolute levels — these running sums reconstruct the green/red waveform
+  // levels by integrating every delta across every packet (stateful, like
+  // the Kalman filter below). Filtering the raw deltas directly (the
+  // previous bug) is near-flat high-frequency noise, not a waveform, which
+  // is why peak detection downstream was finding a "peak" every refractory
+  // window and inflating HR.
+  // ponytail: unbounded running sum, but doubles carry ~15 significant
+  // digits and the band-pass high-pass stage below removes slow drift
+  // anyway, so this never needs resetting within a realistic session.
+  double _greenLevel = 0.0;
+  double _redLevel = 0.0;
+
+  // Replaces the old third FIR stage: that was just another low-pass
+  // smoothing filter (wide-band at 64Hz), not a band-pass, so baseline
+  // wander and out-of-band noise survived into the peak detector. A heart
+  // rate signal lives in ~0.5-4Hz (30-240bpm); this single-pole
+  // high-pass->low-pass cascade confines the output to that band.
+  final _OnePoleBandPass _bandPass = _OnePoleBandPass(sampleRateHz: 64.0, lowHz: 0.5, highHz: 4.0);
 
   /// Decodes one 20-byte BVP notification into up to 11 filtered samples.
   List<double> decode(Uint8List packet) {
@@ -81,22 +100,20 @@ class BvpDecoder {
     final readings = <double>[];
     final pairs = decoded.length ~/ 2;
     for (var i = 0; i < pairs && i < 11; i++) {
-      final green = decoded[i * 2].toDouble();
-      final red = decoded[i * 2 + 1].toDouble();
+      _greenLevel += decoded[i * 2];
+      _redLevel += decoded[i * 2 + 1];
 
-      _push(_fir1, red);
+      _push(_fir1, _redLevel);
       final filteredRed = _weightedSum(_fir1);
 
-      final weighted = (red + green * 10.0) / 11.0;
+      final weighted = (_redLevel + _greenLevel * 10.0) / 11.0;
       _push(_fir2, weighted);
       final filteredWeighted = _weightedSum(_fir2);
 
       final kalmanOut = _kalmanFilter(filteredRed, filteredWeighted);
+      final bandPassed = _bandPass.apply(kalmanOut);
 
-      _push(_fir3, kalmanOut);
-      final filteredKalman = _weightedSum(_fir3);
-
-      readings.add(_roundTo2(-filteredKalman * _bvpScaleFactor));
+      readings.add(_roundTo2(-bandPassed * _bvpScaleFactor));
     }
     return readings;
   }
@@ -166,20 +183,46 @@ class BvpDecoder {
   }
 }
 
-/// Derives heartbeat intervals (IBI) and heart rate (HR) offline from a
-/// stream of already-decoded BVP samples, via naive local-maximum peak
-/// detection with a refractory period. This is the documented fallback
-/// (plan §3.2/CLAUDE.md): no BLE characteristic for HR/IBI has been found,
-/// but Empatica computes HR from IBI the same way — a rolling mean over the
-/// last [hrWindow] intervals.
-///
-/// ponytail: naive fixed-refractory peak detector, no amplitude threshold or
-/// artifact rejection. Upgrade to adaptive thresholding if HR/IBI accuracy
-/// against real hardware proves insufficient (see plan step 9).
-class HrIbiPeakDetector {
-  HrIbiPeakDetector({this.minPeakIntervalSeconds = 0.3, this.hrWindow = 10});
+/// A minimal single-pole high-pass -> single-pole low-pass cascade, i.e. a
+/// cheap band-pass filter. Plain stdlib math, no FFT/filter-design package —
+/// the two cutoffs below are tuned for a 0.5-4Hz (30-240bpm) heart-rate band
+/// at a fixed 64Hz BVP sample rate.
+class _OnePoleBandPass {
+  _OnePoleBandPass({required double sampleRateHz, required double lowHz, required double highHz})
+      : _alphaHp = _rc(lowHz) / (_rc(lowHz) + 1 / sampleRateHz),
+        _alphaLp = (1 / sampleRateHz) / (_rc(highHz) + 1 / sampleRateHz);
 
-  /// Refractory period between accepted peaks; 0.3s caps derived HR at 200bpm.
+  static double _rc(double cutoffHz) => 1 / (2 * math.pi * cutoffHz);
+
+  final double _alphaHp;
+  final double _alphaLp;
+  double _hpPrevIn = 0.0;
+  double _hpPrevOut = 0.0;
+  double _lpPrevOut = 0.0;
+
+  double apply(double x) {
+    final hp = _alphaHp * (_hpPrevOut + x - _hpPrevIn);
+    _hpPrevIn = x;
+    _hpPrevOut = hp;
+    _lpPrevOut += _alphaLp * (hp - _lpPrevOut);
+    return _lpPrevOut;
+  }
+}
+
+/// Derives heartbeat intervals (IBI) and heart rate (HR) offline from a
+/// stream of already-decoded BVP samples, via local-maximum peak detection
+/// with a refractory period and an adaptive amplitude threshold. This is the
+/// documented fallback (plan §3.2/CLAUDE.md): no BLE characteristic for
+/// HR/IBI has been found, but Empatica computes HR from IBI the same way —
+/// a rolling mean over the last [hrWindow] intervals.
+///
+/// ponytail: the amplitude threshold is a simple decaying-max envelope
+/// follower, not a full Pan-Tompkins-style pipeline. Upgrade if HR/IBI
+/// accuracy against real hardware proves insufficient (see plan step 9).
+class HrIbiPeakDetector {
+  HrIbiPeakDetector({this.minPeakIntervalSeconds = 0.4, this.hrWindow = 10});
+
+  /// Refractory period between accepted peaks; 0.4s caps derived HR at 150bpm.
   final double minPeakIntervalSeconds;
 
   /// Number of trailing IBIs averaged into each HR sample.
@@ -191,32 +234,87 @@ class HrIbiPeakDetector {
   double? _lastPeakTimestamp;
   final Queue<double> _recentIbi = Queue<double>();
 
+  // Decaying-max envelope of the (rectified) signal: a candidate peak only
+  // counts as a beat if it clears a fraction of the recently-seen
+  // amplitude, so flat/noisy stretches can't trip the detector on their own
+  // — this, not the refractory period alone, is what keeps noise from being
+  // read as a 150-200bpm heart rate.
+  //
+  // Tuned for fast recovery after a motion artifact: a wrist movement can
+  // swing the integrated BVP signal (see BvpDecoder above) into the
+  // thousands, dwarfing a normal cardiac peak (tens of units). At the old
+  // 0.999/sample decay (~11s half-life at 64Hz) one spike kept the 30%
+  // threshold elevated for 15-19s, silently rejecting every real beat in
+  // that window and starving _recentIbi down to a couple of huge intervals
+  // (-> 4-5s "IBI", 12-13bpm "HR"). 0.995/sample (~2-3s half-life) recovers
+  // fast enough that a few seconds of bad data can't poison tens of seconds
+  // of HR.
+  double _envelope = 0.0;
+  static const double _envelopeDecayPerSample = 0.995;
+  static const double _peakThresholdFraction = 0.3;
+  static const double _envelopeFloor = 1.0;
+
+  // A sample far above the recent (decay-only, not yet touched by this
+  // sample) envelope is a motion artifact, not part of the cardiac
+  // waveform — tuned, not derived from a device spec. It is dropped
+  // entirely (envelope just keeps decaying, the sample never becomes
+  // `_prevValue`/`_prevPrevValue`) rather than merely capped: a capped
+  // value still ratchets the envelope upward on every spike sample, so a
+  // sustained burst (not just one isolated outlier) would otherwise still
+  // blow the envelope up and keep the threshold elevated for many seconds.
+  static const double _artifactRejectionMultiple = 2.5;
+
+  // A gap this large between accepted peaks means beats were missed (e.g.
+  // across a run of dropped artifact samples above), not that the heart
+  // truly paused for that long — averaging across it would drag the
+  // rolling HR down for `hrWindow` more beats. Sits inside the documented
+  // 1.5-2s "treat as reset" range (CLAUDE.md) and well above the 0.4s
+  // refractory period, so it only ever fires on a genuine gap.
+  static const double _maxPlausibleIntervalSeconds = 1.8;
+
   /// Feed one decoded BVP sample; returns any samples derived from it (an
   /// `ibi` sample when a beat is detected, immediately followed by an `hr`
   /// sample — otherwise empty).
   List<E4Sample> addBvpSample(double timestamp, double value) {
     final derived = <E4Sample>[];
+
+    final decayedEnvelope = _envelope * _envelopeDecayPerSample;
+    final artifactFloor = math.max(decayedEnvelope, _envelopeFloor) * _artifactRejectionMultiple;
+    if (value.abs() > artifactFloor) {
+      _envelope = decayedEnvelope;
+      return derived;
+    }
+    _envelope = math.max(value, decayedEnvelope);
+
     final prevValue = _prevValue;
     final prevPrevValue = _prevPrevValue;
     final prevTimestamp = _prevTimestamp;
 
     if (prevValue != null && prevPrevValue != null && prevTimestamp != null) {
       final isLocalMax = prevValue > prevPrevValue && prevValue > value;
+      final abovePeakThreshold = prevValue >= _envelope * _peakThresholdFraction;
       final lastPeak = _lastPeakTimestamp;
       final sinceLastPeak = lastPeak == null ? double.infinity : prevTimestamp - lastPeak;
 
-      if (isLocalMax && sinceLastPeak >= minPeakIntervalSeconds) {
+      if (isLocalMax && abovePeakThreshold && sinceLastPeak >= minPeakIntervalSeconds) {
         if (lastPeak != null) {
           final interval = prevTimestamp - lastPeak;
-          derived.add(E4Sample(signal: E4Signal.ibi, timestamp: prevTimestamp, values: [interval]));
+          if (interval > _maxPlausibleIntervalSeconds) {
+            // Gap too large to trust: discard it and the averaging window
+            // rather than let one inflated interval drag HR down for the
+            // next `hrWindow` beats.
+            _recentIbi.clear();
+          } else {
+            derived.add(E4Sample(signal: E4Signal.ibi, timestamp: prevTimestamp, values: [interval]));
 
-          _recentIbi.addLast(interval);
-          while (_recentIbi.length > hrWindow) {
-            _recentIbi.removeFirst();
-          }
-          final meanIbi = _recentIbi.reduce((a, b) => a + b) / _recentIbi.length;
-          if (meanIbi > 0) {
-            derived.add(E4Sample(signal: E4Signal.hr, timestamp: prevTimestamp, values: [60.0 / meanIbi]));
+            _recentIbi.addLast(interval);
+            while (_recentIbi.length > hrWindow) {
+              _recentIbi.removeFirst();
+            }
+            final meanIbi = _recentIbi.reduce((a, b) => a + b) / _recentIbi.length;
+            if (meanIbi > 0) {
+              derived.add(E4Sample(signal: E4Signal.hr, timestamp: prevTimestamp, values: [60.0 / meanIbi]));
+            }
           }
         }
         _lastPeakTimestamp = prevTimestamp;

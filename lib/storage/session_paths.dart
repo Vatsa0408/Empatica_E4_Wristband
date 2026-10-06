@@ -9,13 +9,18 @@ class SessionPaths {
   const SessionPaths();
 
   /// Android: app-specific external storage — visible over MTP/USB with no
-  /// storage permission required. Windows: the app documents directory.
+  /// storage permission required. Windows: the directory containing the
+  /// running executable, so `flutter run` writes into the project's build
+  /// output and a built release .exe writes sessions next to itself.
   Future<Directory> sessionRoot() async {
-    final root = Platform.isAndroid ? await getExternalStorageDirectory() : await getApplicationDocumentsDirectory();
-    if (root == null) {
-      throw StateError('No session storage directory available on this platform');
+    if (Platform.isAndroid) {
+      final root = await getExternalStorageDirectory();
+      if (root == null) {
+        throw StateError('No session storage directory available on this platform');
+      }
+      return root;
     }
-    return root;
+    return File(Platform.resolvedExecutable).parent;
   }
 
   Future<Directory> newSessionDirectory(String deviceId, {DateTime? startedAt}) async {

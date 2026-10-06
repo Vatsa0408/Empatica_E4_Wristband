@@ -1,0 +1,19 @@
+Empatica E4 session recorded by e4_integrator.
+
+Device: 50:32:5F:14:24:CC
+Transport: Direct BLE (universal_ble), reverse-engineered E4 GATT characteristics — see CLAUDE.md
+Recorded (UTC): 2026-09-30T10:40:21.627365Z
+
+Caveats (see project CLAUDE.md for full provenance):
+- BVP.csv is a filtered approximation of Empatica's proprietary BVP
+  algorithm, reverse-engineered from a third-party project, NOT a
+  byte-identical decode. UNVERIFIED against a real Empatica export.
+- HR.csv and IBI.csv are derived OFFLINE from BVP in this app via naive peak
+  detection, not computed on-device by the E4 the way Empatica's own exports
+  are.
+- BAT.csv is not part of Empatica's export format; it is a documented
+  extension, written IBI-style (`<t0>, BAT` header, then `<elapsed>,<0..1>`
+  rows). The underlying Battery Service (0x180F) read is itself unconfirmed
+  on this hardware.
+- tags.csv has no known BLE path (the E4's physical button) and is expected
+  to stay empty.
