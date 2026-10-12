@@ -77,16 +77,62 @@ and no Empatica Connect dependency.
 
 ## Architecture
 
-```
-Empatica E4 ──BLE notify──▶ BleTransport ──decode──▶ E4Sample stream ──▶ RecordingBloc
- (BVP/EDA/ACC/TEMP)          (universal_ble)    (e4_ble_decoder:            │        │
-                                                 BVP→HR/IBI peak detect)    │        ▼
-                                                                   ConnectionBloc  E4SessionWriter
-                                                                   (250ms throttle)  → BVP.csv, EDA.csv,
-                                                                         │             HR.csv, TEMP.csv,
-                                                                         ▼             ACC.csv, IBI.csv,
-                                                               Dashboard/Device/        BAT.csv, tags.csv,
-                                                               History tabs              info.txt + log
+```mermaid
+flowchart LR
+
+    E4["⌚ Empatica E4<br/>BVP • EDA • ACC • TEMP"]
+
+    subgraph Transport["Transport Layer"]
+        BLE["BleTransport<br/>(universal_ble)"]
+    end
+
+    subgraph Processing["Signal Processing Layer"]
+        Decoder["E4 BLE Decoder"]
+        Sample["E4Sample Stream"]
+        HR["HR / IBI Detection"]
+    end
+
+    subgraph State["State Management"]
+        Recording["RecordingBloc"]
+        Connection["ConnectionBloc<br/>250 ms update throttle"]
+    end
+
+    subgraph UI["Presentation Layer"]
+        Dashboard["Dashboard"]
+        Device["Device"]
+        History["History"]
+    end
+
+    subgraph Storage["Persistence Layer"]
+        Writer["E4SessionWriter"]
+        Files["CSV + Session Files
+        • BVP.csv
+        • EDA.csv
+        • ACC.csv
+        • TEMP.csv
+        • HR.csv
+        • IBI.csv
+        • BAT.csv
+        • tags.csv
+        • info.txt
+        • log.txt"]
+    end
+
+    E4 -->|BLE Notifications| BLE
+    BLE --> Decoder
+    Decoder --> Sample
+    Decoder --> HR
+
+    Sample --> Recording
+    HR --> Recording
+
+    Recording --> Connection
+    Connection --> Dashboard
+    Connection --> Device
+    Connection --> History
+
+    Recording --> Writer
+    Writer --> Files
 ```
 
 One `E4Transport` interface (`lib/transport/e4_transport.dart`) hides the BLE transport from
