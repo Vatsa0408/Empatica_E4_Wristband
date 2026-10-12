@@ -19,7 +19,7 @@ and no Empatica Connect dependency.
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-blue)](#getting-started)
 [![Flutter](https://img.shields.io/badge/Flutter%2FDart%20SDK-%5E3.12.2-02569B?logo=flutter)](pubspec.yaml)
 [![universal_ble](https://img.shields.io/badge/universal__ble-%5E2.3.0-informational)](https://pub.dev/packages/universal_ble)
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-MIT-green)](#license)
 
 <!-- TODO: once CI/tests exist, add a build-passing / coverage badge here. Do not add one yet. -->
 
@@ -227,13 +227,11 @@ Empatica export is the single highest-value contribution this project can get.
 
 ## License
 
-<!-- TODO: no LICENSE file exists yet. Pick a license (MIT and Apache-2.0 are both compatible
-     with universal_ble's BSD-3 license) and add a LICENSE file at the repo root; update this
-     section and the badge above once decided. -->
+Released under the [MIT License](https://opensource.org/license/mit).
 
 ## Authors
 
-<!-- TODO: confirm public display name/attribution. -->
+[Srivatsa Diwakar](https://github.com/Vatsa0408)
 
 ## Acknowledgments
 
