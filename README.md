@@ -1,93 +1,199 @@
-# E4-integrator
+# Empatica Data Collector (e4_integrator)
 
+A Flutter app that connects to an Empatica E4 wristband over Bluetooth Low Energy and
+records its sensor streams to local CSV files — Android phone or Windows laptop, no cloud
+and no Empatica Connect dependency.
 
+> **Unaffiliated project.** "Empatica" and "E4" are trademarks of Empatica Srl. This is an
+> independent, community research project, not sanctioned by or affiliated with Empatica.
+
+> **Read this before you rely on any output.** Empatica
+> [sunset the entire E4 software suite on 2025-02-14](https://www.empatica.com/research/e4-sunset/)
+> (E4 Connect, E4 Manager, the E4 Streaming Server, the SDK — all permanently inoperative, no
+> new API keys issued). This app talks to the E4 over a **reverse-engineered, unofficial BLE
+> GATT profile** that Empatica has never published. The decoded `BVP.csv` is an unverified
+> approximation, `HR.csv`/`IBI.csv` are self-derived from it, and `BAT.csv` is a best-effort
+> guess. See [Caveats](#caveats--read-this-first) for the full list before using this for
+> anything that matters.
+
+[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-blue)](#getting-started)
+[![Flutter](https://img.shields.io/badge/Flutter%2FDart%20SDK-%5E3.12.2-02569B?logo=flutter)](pubspec.yaml)
+[![universal_ble](https://img.shields.io/badge/universal__ble-%5E2.3.0-informational)](https://pub.dev/packages/universal_ble)
+[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+
+<!-- TODO: once CI/tests exist, add a build-passing / coverage badge here. Do not add one yet. -->
+
+## Screenshots
+
+<!-- TODO: screenshot — Dashboard tab (live BVP/EDA/ACC/TEMP charts). Save to docs/images/ and
+     embed here, e.g. ![Dashboard](docs/images/dashboard.png) -->
+<!-- TODO: screenshot — Device tab (scan/connect flow). Save to docs/images/ and embed here. -->
+
+## Features
+
+- Direct BLE connect/disconnect on **Android and Windows** from one `E4Transport` interface
+  (`lib/transport/e4_transport.dart`) — no TCP/E4-Streaming-Server path, which is dead
+  post-sunset.
+- Device discovery by name prefix `"Empatica E4"` (5-second scan) via
+  [`universal_ble`](https://pub.dev/packages/universal_ble).
+- Live decode of **BVP, EDA, ACC, TEMP** from reverse-engineered BLE characteristics.
+- **HR and IBI derived on-device from the decoded BVP** signal via peak detection (not
+  read from the E4 directly — see caveats).
+- One-CSV-per-signal session output matching Empatica's own native export layout, with
+  positional rows, gap-padding on dropped packets, a per-session `info.txt`, and a drop
+  sidecar log (`e4_integrator_log.txt`).
+- Two user-selectable recording modes: **continuous** (records for as long as the device is
+  connected) and **manual** start/stop.
+- `ConnectionBloc` + `RecordingBloc` state management with a ~250 ms UI throttle — every
+  sample is still written to disk regardless of UI throttling.
+- Responsive 3-tab UI (Dashboard live charts, Device, History) that adapts between phone
+  (`NavigationBar`) and desktop (`NavigationRail`) layouts.
+- **Experimental:** battery level via the standard BLE Battery Service (`0x180F`) —
+  unconfirmed whether the E4 actually exposes it; fails silently if not present.
+
+## Caveats — read this first
+
+- **Sunset hardware.** Empatica's entire E4 software suite has been inoperative since
+  2025-02-14. There is no way to validate this app's output against Empatica's own tooling.
+- **Unofficial, reverse-engineered BLE profile.** Empatica has never published the E4's GATT
+  profile. The characteristic UUIDs used here come from a third-party reverse-engineering
+  effort ([`ismaelwarnants/e4-python-server`](https://github.com/ismaelwarnants/e4-python-server),
+  flagged by its own author as unverified).
+- **`BVP.csv` is an unverified approximation**, not a byte-identical decode of Empatica's
+  proprietary BVP algorithm. It cannot be checked against a real streaming-server recording.
+- **`HR.csv` and `IBI.csv` are self-derived**, computed in this app from the decoded BVP via a
+  naive peak detector — they are not device-native values from the E4.
+- **`BAT.csv` is experimental** — a best-effort read of the standard BLE Battery Service;
+  unconfirmed that the E4 exposes it at all, and failures are swallowed (the file may simply
+  never appear).
+- **`tags.csv` will likely stay empty.** No BLE characteristic is known for the E4's physical
+  tag button; `E4Signal.tag` is never emitted.
+- **No automated Android runtime permission request yet.** The manifest declares the right
+  Bluetooth (and, on Android ≤ 11, Location) permissions, but nothing in `lib/` requests them
+  at runtime — grant them manually if the OS doesn't prompt you (see
+  [Getting started](#getting-started)).
+- **No session export/share and no persistent session history** are implemented yet — see
+  [Roadmap](#roadmap).
+
+## Architecture
+
+```
+Empatica E4 ──BLE notify──▶ BleTransport ──decode──▶ E4Sample stream ──▶ RecordingBloc
+ (BVP/EDA/ACC/TEMP)          (universal_ble)    (e4_ble_decoder:            │        │
+                                                 BVP→HR/IBI peak detect)    │        ▼
+                                                                   ConnectionBloc  E4SessionWriter
+                                                                   (250ms throttle)  → BVP.csv, EDA.csv,
+                                                                         │             HR.csv, TEMP.csv,
+                                                                         ▼             ACC.csv, IBI.csv,
+                                                               Dashboard/Device/        BAT.csv, tags.csv,
+                                                               History tabs              info.txt + log
+```
+
+One `E4Transport` interface (`lib/transport/e4_transport.dart`) hides the BLE transport from
+parsing, storage and UI, so none of them need to know which platform they're running on. BVP
+is decoded first and then run through a local peak detector to synthesize HR/IBI in-app, since
+the E4 exposes no native characteristic for either. Every decoded sample is written to disk
+immediately and unthrottled; the BLoCs only throttle their own UI state emission to ~250 ms.
 
 ## Getting started
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+### Prerequisites
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- Flutter SDK (Dart `^3.12.2`, see `pubspec.yaml`)
+- An Android device with BLE, **or** a Windows machine with a Bluetooth adapter
+- For Windows builds: the "Desktop development with C++" workload in Visual Studio
+  ([Flutter Windows build docs](https://docs.flutter.dev/platform-integration/windows/building))
+- An Empatica E4 wristband, powered on and in range. Empatica's own apps (E4 Connect, E4
+  Manager, etc.) are **not** required and are no longer usable since the 2025 sunset.
 
-## Add your files
+### Run it
 
-* [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+```bash
+git clone https://github.com/Vatsa0408/Empatica_E4_Wristband.git
+cd Empatica_E4_Wristband
+flutter pub get
+flutter run
 ```
-cd existing_repo
-git remote add origin https://gitlab.institut-ifm.de/Srivatsa.Diwakar/e4-integrator.git
-git branch -M master
-git push -uf origin master
-```
 
-## Integrate with your tools
+### Permissions
 
-* [Set up project integrations](https://gitlab.institut-ifm.de/Srivatsa.Diwakar/e4-integrator/-/settings/integrations)
+The Android manifest already declares `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, and (for API ≤
+30) `ACCESS_FINE_LOCATION`. These are runtime permissions on Android 12+, and no runtime
+request is wired up in the app yet — if scanning finds nothing, check your device's app
+settings and grant Bluetooth (and Location, on Android 11 and below) manually.
 
-## Collaborate with your team
+## Output format
 
-* [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Sessions are written as one folder per connection:
+`<unix-start-seconds>_<deviceId>/` — matching Empatica's own native E4 export layout:
 
-## Test and Deploy
+| File | Rate | Notes |
+|------|------|-------|
+| `BVP.csv` | 64 Hz | Two-row header (t0, rate), one sample per row. Unverified approximation. |
+| `EDA.csv` | 4 Hz | Two-row header, one sample per row. |
+| `TEMP.csv` | 4 Hz | Two-row header, one sample per row. |
+| `HR.csv` | 1 Hz | Two-row header, one sample per row. Self-derived from BVP. |
+| `ACC.csv` | 32 Hz | Two-row header (rate row repeats 3x for x,y,z), 3 columns per row. |
+| `IBI.csv` | irregular | Header `<t0>, IBI`, then `<elapsed>,<value>` rows. Self-derived from BVP. |
+| `tags.csv` | — | Bare timestamps, no header row. Expected to stay empty (no BLE path). |
+| `BAT.csv` | irregular | Not part of Empatica's format — a documented extension, written IBI-style. Experimental. |
+| `info.txt` | — | Per-session notes restating these caveats. |
+| `e4_integrator_log.txt` | — | Sidecar log of any gap-padded/dropped rows (not an Empatica file). |
 
-Use the built-in continuous integration in GitLab.
+Two correctness rules the writer follows (`lib/storage/e4_session_writer.dart`):
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+1. **`t0` is the first-received-sample timestamp per signal**, not wall-clock time.
+2. **Rows are positional** — row *n* means `t0 + n/rate`. A dropped BLE packet is gap-padded
+   (blank row) to keep every later row aligned, and the drop is logged to
+   `e4_integrator_log.txt` rather than silently shifting timestamps.
 
-***
+**Where files land:**
 
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+- **Android:** app-specific external storage (visible over MTP/USB, no storage permission
+  needed) — e.g. `Android/data/<package>/files/`.
+- **Windows:** the directory containing the running executable — under `flutter run` that's
+  the build output directory; for a packaged release, next to the `.exe`.
 
 ## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+
+- Real session export/share (the History tab's "Export" currently only flips an in-memory
+  flag; `file_picker` is already a dependency but unused)
+- Persistent session history (currently in-memory only, lost on app restart)
+- Automated Android runtime permission request flow (`permission_handler` is already a
+  dependency but unused)
+- Validation of the reverse-engineered BVP decode and derived HR/IBI against a reference
+  recording, if anyone with access to real Empatica streaming-server data can help
+- CI and automated tests (`bloc_test` / `mocktail` are dev dependencies but no `test/`
+  suite or CI config exists yet)
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Contributions are welcome, especially from anyone who still has access to a working E4
+Streaming Server recording or Empatica reference data — validating `BVP.csv` against a real
+Empatica export is the single highest-value contribution this project can get.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+- Transport/decoding lives in `lib/transport/` (`ble_transport.dart`,
+  `e4_ble_decoder.dart`); storage in `lib/storage/e4_session_writer.dart`; state management in
+  `lib/bloc/`.
+- Run `flutter analyze` and keep platform-specific code behind the `E4Transport` interface —
+  parsing, storage and UI should never branch on platform directly.
+- Open an issue or pull request with what you found.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+<!-- TODO: no LICENSE file exists yet. Pick a license (MIT and Apache-2.0 are both compatible
+     with universal_ble's BSD-3 license) and add a LICENSE file at the repo root; update this
+     section and the badge above once decided. -->
+
+## Authors
+
+<!-- TODO: confirm public display name/attribution. -->
+
+## Acknowledgments
+
+- BLE characteristic UUIDs reverse-engineered by
+  [`ismaelwarnants/e4-python-server`](https://github.com/ismaelwarnants/e4-python-server)
+  (unverified, per its own author).
+- Built with [`universal_ble`](https://pub.dev/packages/universal_ble),
+  [`flutter_bloc`](https://pub.dev/packages/flutter_bloc), and
+  [`path_provider`](https://pub.dev/packages/path_provider).
