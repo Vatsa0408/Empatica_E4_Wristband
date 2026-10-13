@@ -1,0 +1,122 @@
+name: Build Flutter App
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    name: Build Android APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build obfuscated APKs
+        run: >
+          flutter build apk
+          --release
+          --obfuscate
+          --split-debug-info=build/app/outputs/symbols
+          --split-per-abi
+          --no-tree-shake-icons
+
+      - name: Upload Android APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: empatica-e4-android-apks
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Android symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: empatica-e4-android-symbols
+          path: build/app/outputs/symbols/
+          if-no-files-found: error
+          retention-days: 90
+
+  build-windows:
+    name: Build Windows Application
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Enable Windows desktop support
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build obfuscated Windows application
+        run: >
+          flutter build windows
+          --release
+          --obfuscate
+          --split-debug-info=build/windows/symbols
+
+      - name: Upload Windows application
+        uses: actions/upload-artifact@v4
+        with:
+          name: empatica-e4-windows
+          path: build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: empatica-e4-windows-symbols
+          path: |
+            build/windows/symbols/
+            build/windows/x64/runner/Release/*.pdb
+          if-no-files-found: warn
+          retention-days: 90
