@@ -31,7 +31,7 @@ const Map<E4Signal, SignalRangeSpec> signalRangeSpecs = {
   E4Signal.bvp: SignalRangeSpec(caption: 'arbitrary units — flagged if |value| > 1000 (motion artifact)', artifactAbs: 1000),
   E4Signal.hr: SignalRangeSpec(caption: '40-180 bpm', min: 40, max: 180),
   E4Signal.ibi: SignalRangeSpec(caption: '0.33-1.5 s (resting ~0.6-1.1)', min: 0.33, max: 1.5),
-  E4Signal.eda: SignalRangeSpec(caption: '0.01-100 µS (typical 0.5-20)', min: 0.01, max: 100),
+  E4Signal.eda: SignalRangeSpec(caption: 'raw ADC counts, uint16 (typical ~3500-7000 at rest; not µS)', min: 0, max: 65535),
   E4Signal.temp: SignalRangeSpec(caption: '30-37 °C on skin', min: 30, max: 37),
   E4Signal.acc: SignalRangeSpec(caption: '±128 raw (64 = 1g, ±2g full scale)', min: -128, max: 127),
   E4Signal.battery: SignalRangeSpec(caption: '0-100%', min: 0, max: 100),

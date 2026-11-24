@@ -91,6 +91,9 @@ void main() {
     expect(info, contains('abc-123'));
     expect(info, contains('Direct BLE (universal_ble)'));
     expect(info, contains('UNVERIFIED'));
+    expect(info, contains('tags.csv is device-native'));
+    expect(info, contains('0x3EB2'));
+    expect(info, contains('11 samples'));
   });
 
   test('close() is idempotent', () async {
