@@ -146,16 +146,26 @@ Recorded (UTC): ${DateTime.now().toUtc().toIso8601String()}
 Caveats (see project CLAUDE.md for full provenance):
 - BVP.csv is a filtered approximation of Empatica's proprietary BVP
   algorithm, reverse-engineered from a third-party project, NOT a
-  byte-identical decode. UNVERIFIED against a real Empatica export.
+  byte-identical decode. UNVERIFIED against a real Empatica export. Each BLE
+  packet carries 11 samples (64 Hz, confirmed packet rate). Only the EVEN
+  7-bit field of each pair is used; the odd field is discarded (meaning
+  unknown). A pulse at ~85-90 bpm was observed in two captures, but there is
+  no ground-truth reference.
 - HR.csv and IBI.csv are derived OFFLINE from BVP in this app via naive peak
   detection, not computed on-device by the E4 the way Empatica's own exports
-  are.
+  are. HR.csv is 1 Hz (rolling mean of recent IBIs, one row per second, blank
+  rows where no HR could be derived); IBI.csv has one row per detected beat.
 - BAT.csv is not part of Empatica's export format; it is a documented
   extension, written IBI-style (`<t0>, BAT` header, then `<elapsed>,<0..1>`
-  rows). The underlying Battery Service (0x180F) read is itself unconfirmed
-  on this hardware.
-- tags.csv has no known BLE path (the E4's physical button) and is expected
-  to stay empty.
+  rows). Source is the E4-proprietary characteristic 0x3EB3, whose payload
+  layout is undecoded; the value is a placeholder, UNVERIFIED.
+- EDA.csv holds RAW ADC counts (uint16), NOT microsiemens: the conversion
+  factor is firmware-internal and needs a calibration resistor to derive.
+- TEMP.csv is `raw / 500` (empirical), UNVERIFIED against a thermometer.
+- tags.csv is device-native: button presses from BLE characteristic 0x3EB2
+  (u32 LE counter / 64 = seconds since the BVP stream started, anchored to the
+  arrival time of the first BVP packet; within ~0.06 s of 3 real presses).
+  One bare Unix timestamp per press; empty if the button was never pressed.
 ''');
   }
 

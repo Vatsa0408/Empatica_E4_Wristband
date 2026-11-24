@@ -2,7 +2,7 @@
 name: build-runner
 description: Use this agent to build or run e4_integrator for Android or Windows. Builds default to release mode with obfuscation on both platforms; pass debug explicitly to get a debug build/run instead. It reports diagnostics and does not change source code.
 tools: Read, Bash, Grep, Glob
-model: claude-haiku-4-5-20251001
+model: claude-haiku-5-5
 effort: medium
 ---
 

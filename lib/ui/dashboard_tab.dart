@@ -69,7 +69,8 @@ class _DashboardBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final recordingBloc = context.read<RecordingBloc>();
-    final batteryPercent = recordingState.latest[E4Signal.battery]?.values.single.round();
+    final batteryLevel = recordingState.latest[E4Signal.battery]?.values.single;
+    final batteryPercent = batteryLevel == null ? null : (batteryLevel * 100).round();
 
     final trendCards = <Widget>[
       SignalCard(
@@ -91,10 +92,10 @@ class _DashboardBody extends StatelessWidget {
         label: 'Electrodermal activity',
         color: E4Colors.eda,
         tint: E4Colors.edaTint,
-        valueLabel: _last(recordingState.eda, 2),
-        unit: 'µS',
+        valueLabel: _last(recordingState.eda, 0),
+        unit: 'raw',
         count: recordingState.counts[E4Signal.eda] ?? 0,
-        series: [ChartSeries(recordingState.eda, E4Colors.eda, min: 0, max: 1.8)],
+        series: [ChartSeries(recordingState.eda, E4Colors.eda, min: 0, max: 10000)],
         rangeStatus: _status(E4Signal.eda, recordingState.eda),
         rangeCaption: _caption(E4Signal.eda),
         filled: true,

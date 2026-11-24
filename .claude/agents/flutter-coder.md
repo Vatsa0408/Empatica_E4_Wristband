@@ -2,7 +2,7 @@
 name: flutter-coder
 description: Use this agent to implement Flutter/Dart code changes in the e4_integrator project. It proposes a full change plan first, then makes edits — every edit still goes through normal permission approval. Best paired after the app-planner agent has produced a plan.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 effort: high
 ---
 

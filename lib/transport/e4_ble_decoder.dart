@@ -2,47 +2,59 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../model/e4_sample.dart';
 
-/// Calibration offset applied to the raw skin-temperature reading. The ideal
-/// Kelvin->Celsius formula (`raw*0.02 - 273.15`) will never match a real
-/// thermistor against real skin, so this is exposed as a parameter — never
-/// baked in silently — rather than a constant.
-const double defaultTempCalibration = 0.46;
+/// Calibration offset (degC) added to the decoded skin temperature. Exposed as
+/// a parameter — never baked in silently — because a real thermistor never
+/// matches real skin. Default 0.0: the old 0.46 was tuned to the previous
+/// (`raw*0.02-276`) formula, not to `raw/500`; re-tune against a thermometer.
+const double defaultTempCalibration = 0.0;
 
-/// EDA/GSR (`0x3EA8`): 20-byte notification, six 24-bit big-endian samples
-/// (18 bytes), last 2 bytes are a packet counter. µS = 1e6 / raw.
-///
-/// Formula and packet layout are reverse-engineered, **unverified** against
-/// a real Empatica export — see CLAUDE.md.
+/// EDA/GSR (`0x3EA8`): 20-byte notification, six samples of
+/// (uint16 big-endian value + constant `0xAC` flag byte) = 18 bytes, then
+/// byte 18 (always 0) and an 8-bit packet counter in byte 19. Returns **raw ADC counts** (~3500-7000 at
+/// rest), NOT µS: the µS factor is firmware-internal and needs a calibration
+/// resistor. Layout is reverse-engineered, **unverified** — see CLAUDE.md.
 List<double> decodeEda(Uint8List packet) {
   if (packet.length < 20) return const [];
   final readings = <double>[];
-  for (var i = 0; i + 3 <= packet.length - 2; i += 3) {
-    final raw = (packet[i] << 16) | (packet[i + 1] << 8) | packet[i + 2];
-    readings.add(raw == 0 ? 0.0 : 1000000.0 / raw);
+  for (var i = 0; i < 18; i += 3) {
+    readings.add(((packet[i] << 8) | packet[i + 1]).toDouble()); // packet[i + 2] = flag
   }
   return readings;
 }
 
-/// Skin temperature (`0x3EA6`): 12-byte notification, four little-endian
-/// uint16 samples (8 bytes), remaining 4 bytes unused/unknown.
+/// EDA 8-bit packet counter (byte 19), or null for a short packet. Cycles
+/// 1..255 and skips 0 (byte 18 is always 0 in the 2026-11-02 capture; 255 -> 1).
+int? edaCounter(Uint8List packet) => packet.length < 20 ? null : packet[19];
+
+/// Skin temperature (`0x3EA6`): 20-byte notification, eight little-endian
+/// uint16 samples (bytes 0-15), then a 4-byte big-endian counter.
+/// `degC = raw / 500` (empirical, **unverified**) `+ calibration`.
 List<double> decodeTemp(
   Uint8List packet, {
   double calibration = defaultTempCalibration,
 }) {
-  if (packet.length < 12) return const [];
+  if (packet.length < 20) return const [];
   final readings = <double>[];
-  for (var i = 0; i < 8; i += 2) {
+  for (var i = 0; i < 16; i += 2) {
     final raw = packet[i] | (packet[i + 1] << 8);
-    readings.add((raw * 0.02) - 276.0 + calibration);
+    readings.add(raw / 500.0 + calibration);
   }
   return readings;
 }
 
+/// Temp 4-byte big-endian counter (bytes 16-19), or null for a short packet.
+int? tempCounter(Uint8List packet) =>
+    packet.length < 20 ? null : (packet[16] << 24) | (packet[17] << 16) | (packet[18] << 8) | packet[19];
+
 /// Accelerometer (`0x3EA3`): signed-byte (x, y, z) triples, raw `64 * g`
 /// ints — the same units Empatica's own `ACC.csv` export uses, so callers
-/// store these values directly without further scaling.
+/// store these values directly without further scaling. A full packet is six
+/// triples (bytes 0-17); byte 18 varies 0x85-0x8B (meaning unknown), byte 19 is a packet
+/// counter cycling 1..255 (0 skipped).
 List<List<int>> decodeAcc(Uint8List packet) {
   final readings = <List<int>>[];
   for (var i = 0; i + 3 <= packet.length; i += 3) {
@@ -51,10 +63,38 @@ List<List<int>> decodeAcc(Uint8List packet) {
   return readings;
 }
 
+/// ACC packet counter (byte 19, 1..255, 0 skipped), or null for a short packet.
+int? accCounter(Uint8List packet) => packet.length < 20 ? null : packet[19];
+
 int _toInt8(int byte) => byte > 127 ? byte - 256 : byte;
+
+/// BVP samples per 20-byte notification: 5.818 packets/s x 11 = 64.0 Hz exactly
+/// (2026-11-02 capture).
+const int bvpSamplesPerPacket = 11;
+
+/// BVP packet counter: low 6 bits of byte 19, cycling 1..63 (0 skipped), or
+/// null for a short packet. The 2 high bits of byte 19 are sample data.
+int? bvpCounter(Uint8List packet) => packet.length < 20 ? null : packet[19] & 0x3F;
+
+/// Tag/button (`0x3EB2`, service `0x3EB0`): byte 0 = 0x01, bytes 1-4 = u32
+/// little-endian counter, bytes 5-8 = the same counter repeated. Returns
+/// the counter (`counter / 64` = seconds since the BVP stream started, verified
+/// within 0.06 s against 3 button presses), or null if the packet isn't a tag.
+int? decodeTagCounter(Uint8List packet) {
+  if (packet.length < 9 || packet[0] != 0x01) return null;
+  final data = ByteData.sublistView(packet);
+  final counter = data.getUint32(1, Endian.little);
+  return counter == data.getUint32(5, Endian.little) ? counter : null;
+}
 
 const List<double> _firCoefficients = [0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05];
 const double _bvpScaleFactor = 10.0;
+
+/// Whether the even 7-bit BVP fields are signed *deltas* (integrated into a
+/// running level) or already raw levels. UNSETTLED: both show the pulse in the
+/// captures (docs/plan/activity-log.md, "BVP investigation"); flip this one
+/// flag to switch.
+const bool bvpEvenFieldsAreDeltas = true;
 
 /// BVP/PPG (`0x3EA1`) decoder. Stateful (FIR + Kalman filter chain carried
 /// across packets), so — unlike the other three decoders — this is a class,
@@ -63,54 +103,46 @@ const double _bvpScaleFactor = 10.0;
 /// available to validate against.
 ///
 /// **UNVERIFIED**: this is a filtered approximation of Empatica's own
-/// proprietary BVP algorithm, not a byte-identical decode. See CLAUDE.md.
+/// proprietary BVP algorithm, not a byte-identical decode. Only the EVEN 7-bit
+/// field of each pair is used (one per sample); the ODD field is discarded and
+/// its meaning is unknown. A pulse at ~85-90 bpm was observed in two captures,
+/// but there is no ground-truth reference. See CLAUDE.md.
 class BvpDecoder {
-  final Queue<double> _fir1 = Queue.of(List.filled(_firCoefficients.length, 0.0));
-  final Queue<double> _fir2 = Queue.of(List.filled(_firCoefficients.length, 0.0));
+  final Queue<double> _fir = Queue.of(List.filled(_firCoefficients.length, 0.0));
   double _kalmanP = 1.0;
   double _kalmanX = 0.0;
   static const double _kalmanQ = 0.01;
   static const double _kalmanR = 0.1;
 
-  // decoded[] out of _unpack7Bit is a stream of signed 7-bit *deltas*, not
-  // absolute levels — these running sums reconstruct the green/red waveform
-  // levels by integrating every delta across every packet (stateful, like
-  // the Kalman filter below). Filtering the raw deltas directly (the
-  // previous bug) is near-flat high-frequency noise, not a waveform, which
-  // is why peak detection downstream was finding a "peak" every refractory
-  // window and inflating HR.
+  // Running sum of the even fields when [bvpEvenFieldsAreDeltas] is true.
   // ponytail: unbounded running sum, but doubles carry ~15 significant
   // digits and the band-pass high-pass stage below removes slow drift
   // anyway, so this never needs resetting within a realistic session.
-  double _greenLevel = 0.0;
-  double _redLevel = 0.0;
+  double _level = 0.0;
 
-  // Replaces the old third FIR stage: that was just another low-pass
-  // smoothing filter (wide-band at 64Hz), not a band-pass, so baseline
-  // wander and out-of-band noise survived into the peak detector. A heart
-  // rate signal lives in ~0.5-4Hz (30-240bpm); this single-pole
+  // A heart rate signal lives in ~0.5-4Hz (30-240bpm); this single-pole
   // high-pass->low-pass cascade confines the output to that band.
   final _OnePoleBandPass _bandPass = _OnePoleBandPass(sampleRateHz: 64.0, lowHz: 0.5, highHz: 4.0);
 
-  /// Decodes one 20-byte BVP notification into up to 11 filtered samples.
+  /// Decodes one 20-byte BVP notification into [bvpSamplesPerPacket] (11)
+  /// filtered samples: 154 sample bits = bytes 0-18 plus the top 2 bits of
+  /// byte 19 (its low 6 bits are the packet counter) = 22 seven-bit values,
+  /// two per sample.
+  ///
+  /// UNVERIFIED: only the even field (index 0, 2, ..., 20) of each pair is
+  /// used; the odd field is discarded (meaning unknown, no pulse seen in it).
   List<double> decode(Uint8List packet) {
     if (packet.length < 20) return const [];
     final decoded = _unpack7Bit(packet);
 
     final readings = <double>[];
-    final pairs = decoded.length ~/ 2;
-    for (var i = 0; i < pairs && i < 11; i++) {
-      _greenLevel += decoded[i * 2];
-      _redLevel += decoded[i * 2 + 1];
+    for (var i = 0; i < bvpSamplesPerPacket; i++) {
+      final field = decoded[i * 2];
+      final input = bvpEvenFieldsAreDeltas ? (_level += field) : field.toDouble();
+      _push(_fir, input);
+      final filtered = _weightedSum(_fir);
 
-      _push(_fir1, _redLevel);
-      final filteredRed = _weightedSum(_fir1);
-
-      final weighted = (_redLevel + _greenLevel * 10.0) / 11.0;
-      _push(_fir2, weighted);
-      final filteredWeighted = _weightedSum(_fir2);
-
-      final kalmanOut = _kalmanFilter(filteredRed, filteredWeighted);
+      final kalmanOut = _kalmanFilter(filtered, filtered);
       final bandPassed = _bandPass.apply(kalmanOut);
 
       readings.add(_roundTo2(-bandPassed * _bvpScaleFactor));
@@ -146,32 +178,27 @@ class BvpDecoder {
 
   static double _roundTo2(double v) => (v * 100).round() / 100;
 
-  /// 7-bit packed delta unpacking — a direct port of the reverse-engineered
-  /// packet layout. The bit manipulation is unexplained even by its own
-  /// author (decompiled from Empatica's binary); see CLAUDE.md's source.
+  /// 7-bit unpacking of the 154 sample bits (bytes 0-18 + top 2 bits of byte
+  /// 19) into 22 signed values, MSB-first. The bit layout is from a
+  /// reverse-engineered third-party port; what the values mean is UNVERIFIED
+  /// (see CLAUDE.md).
+  @visibleForTesting
+  static List<int> unpack7Bit(Uint8List data) => _unpack7Bit(data);
+
   static List<int> _unpack7Bit(Uint8List data) {
     final decoded = <int>[];
     var acc = 0;
-    for (var i = 0; i < 0x14; i++) {
-      final byte = data[i];
-      final bitIndex = i % 7;
-      final shift = bitIndex + 1;
-
-      acc = (byte >> shift) | acc;
-      decoded.add(_signExtend7(acc));
-
-      final mask = (1 << shift) - 1;
-      acc = ((byte & mask) << (6 - bitIndex)) & 0xFF;
-
-      if (shift == 7) {
-        decoded.add(_signExtend7(acc));
-        acc = 0;
+    var bits = 0;
+    for (var i = 0; i < 20; i++) {
+      final width = i < 19 ? 8 : 2;
+      acc = (acc << width) | (i < 19 ? data[i] : data[19] >> 6);
+      bits += width;
+      while (bits >= 7) {
+        bits -= 7;
+        decoded.add(_signExtend7((acc >> bits) & 0x7F));
       }
+      acc &= (1 << bits) - 1;
     }
-    var finalVal = data[0x13] & 0x3F;
-    if (finalVal & 0x20 != 0) finalVal |= 0xC0;
-    if (finalVal > 127) finalVal -= 256;
-    decoded.add(finalVal);
     return decoded;
   }
 
@@ -232,6 +259,8 @@ class HrIbiPeakDetector {
   double? _prevPrevValue;
   double? _prevTimestamp;
   double? _lastPeakTimestamp;
+  double? _hrT0;
+  int _lastHrRow = -1;
   final Queue<double> _recentIbi = Queue<double>();
 
   // Decaying-max envelope of the (rectified) signal: a candidate peak only
@@ -273,8 +302,8 @@ class HrIbiPeakDetector {
   static const double _maxPlausibleIntervalSeconds = 1.8;
 
   /// Feed one decoded BVP sample; returns any samples derived from it (an
-  /// `ibi` sample when a beat is detected, immediately followed by an `hr`
-  /// sample — otherwise empty).
+  /// `ibi` sample when a beat is detected, and an `hr` sample at most once per
+  /// whole second — otherwise empty).
   List<E4Sample> addBvpSample(double timestamp, double value) {
     final derived = <E4Sample>[];
 
@@ -311,10 +340,6 @@ class HrIbiPeakDetector {
             while (_recentIbi.length > hrWindow) {
               _recentIbi.removeFirst();
             }
-            final meanIbi = _recentIbi.reduce((a, b) => a + b) / _recentIbi.length;
-            if (meanIbi > 0) {
-              derived.add(E4Sample(signal: E4Signal.hr, timestamp: prevTimestamp, values: [60.0 / meanIbi]));
-            }
           }
         }
         _lastPeakTimestamp = prevTimestamp;
@@ -324,6 +349,26 @@ class HrIbiPeakDetector {
     _prevPrevValue = _prevValue;
     _prevValue = value;
     _prevTimestamp = timestamp;
+
+    // HR is 1 Hz (Empatica's HR.csv is positional at 1 Hz): one sample per
+    // whole second. Seconds with no IBI window (after a gap reset) are skipped
+    // and the writer gap-pads them as "HR unknown".
+    //
+    // The grid is anchored at the first emitted HR (= HR.csv's t0) and every
+    // sample is stamped exactly on it (t0 + row), NOT at the BVP sample time:
+    // the writer places rows at round(ts - t0), so a sample resuming mid-second
+    // after a gap landed a row early, was padded, and the next on-time sample
+    // collided with it and was dropped as "out-of-order".
+    final t0 = _hrT0 ?? timestamp;
+    final row = ((timestamp - t0)).floor();
+    if (row > _lastHrRow && _recentIbi.isNotEmpty) {
+      final meanIbi = _recentIbi.reduce((a, b) => a + b) / _recentIbi.length;
+      if (meanIbi > 0) {
+        _hrT0 = t0;
+        _lastHrRow = row;
+        derived.add(E4Sample(signal: E4Signal.hr, timestamp: t0 + row, values: [60.0 / meanIbi]));
+      }
+    }
     return derived;
   }
 }

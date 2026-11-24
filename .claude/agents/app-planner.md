@@ -2,7 +2,7 @@
 name: app-planner
 description: Use this agent to analyze a new feature request for the e4_integrator Flutter project, assess its feasibility, and produce a detailed implementation guide as a Markdown file. It gathers relevant Empatica E4 connectivity, Android/Windows platform guidelines, and pub.dev package information. Invoke it BEFORE writing any code.
 tools: Read, Grep, Glob, WebFetch, WebSearch, Write
-model: claude-opus-4-8
+model: claude-opus-5-5
 effort: high
 ---
 
