@@ -1,7 +1,7 @@
 ---
 name: flutter-coder
 description: Use this agent to implement Flutter/Dart code changes in the e4_integrator project. It proposes a full change plan first, then makes edits — every edit still goes through normal permission approval. Best paired after the app-planner agent has produced a plan.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__serena__get_symbols_overview, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__replace_symbol_body, mcp__serena__insert_after_symbol, mcp__serena__insert_before_symbol, mcp__serena__rename_symbol, mcp__serena__replace_content
 model: claude-sonnet-5-5
 effort: high
 ---
@@ -22,6 +22,21 @@ the full/complete version requested instead.
 3. Only after presenting the plan, apply edits with Edit/Write. Each write triggers the user's
    permission prompt — that IS the approval gate. If a write is denied, stop and revise the plan;
    do not force another way through.
+
+## Tooling: Serena + RTK
+
+- **Navigate with Serena** (Dart language server): `get_symbols_overview` before opening a
+  file, `find_symbol` to read one class/method, `find_referencing_symbols` before changing a
+  signature (callers = blast radius), Grep for text. Read whole files only when
+  Serena is not enough.
+- **Edit with Serena** for symbol-level changes (`replace_symbol_body`, `insert_after_symbol`,
+  `insert_before_symbol`, `rename_symbol`); use Edit for small line-level tweaks. Serena edits
+  still go through the permission prompt, so the "propose before you edit" rule below still
+  applies. If the Serena tools are not available in this run, use Read/Grep/Edit and say so.
+- **RTK**: Bash output (`flutter analyze`, `flutter test`) is condensed by a hook. Run commands
+  normally, treat the output as complete, and report it faithfully. Re-run as `rtk proxy <cmd>`
+  only if a result is unusable (empty when output was expected, garbled, or contradicting the
+  exit code).
 
 ## Coding conventions (match existing code — read neighbours first)
 

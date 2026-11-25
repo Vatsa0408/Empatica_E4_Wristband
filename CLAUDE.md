@@ -9,6 +9,27 @@ live in `docs/plan/` (`readme.md`, `e4-full-signal-extraction.md`, `session-summ
 `e4-parsing-verification.md`). Note: `docs/plan/e4-wristband-integration.md`, referenced by
 earlier drafts of this file, does **not** exist.
 
+## Code navigation and tooling (Serena + RTK)
+
+- **Serena** (MCP server `serena`, project config in `.serena/project.yml`, Dart language
+  server) is the first choice for Dart code lookups and symbol edits: `get_symbols_overview`,
+  `find_symbol`, `find_referencing_symbols`, and for edits
+  `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `rename_symbol`. Read
+  whole files only when Serena is not enough. Use Read/Grep/Glob for docs, YAML and other
+  non-code files. Use Serena for **all** Dart work; if it errors (e.g. "language server manager
+  is not initialized"), stop and tell the user instead of silently falling back to
+  Read/Grep/Edit. The server must be registered for this project (see `claude mcp list`);
+  `.serena/` is git-ignored.
+  - Known failure: Serena's own downloaded Dart SDK
+    (`~/.serena/language_servers/static/DartLanguageServer/dart-sdk`) can be incomplete ("Could
+    not resolve DartDev snapshot"). Fix: replace that folder with a junction to Flutter's
+    `bin/cache/dart-sdk`, kill the Serena python process, then `/mcp` reconnect `serena`.
+- **RTK** condenses shell output through a Bash hook. Run commands normally and treat the output
+  as complete; re-run as `rtk proxy <cmd>` only when a result is unusable (empty when output was
+  expected, garbled, or contradicting the exit code).
+- The agents in `.claude/agents/` carry the same rules (and list the Serena tools in their
+  `tools:` frontmatter).
+
 ## Goal
 
 A Flutter app that connects to an Empatica E4 wristband, pulls its sensor streams

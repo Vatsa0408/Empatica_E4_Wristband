@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../bloc/connection_bloc.dart';
 import 'breakpoint.dart';
@@ -36,13 +37,36 @@ class _HomePageState extends State<HomePage> {
         actions: [
           BlocBuilder<ConnectionBloc, ConnectionState>(
             builder: (context, state) => Padding(
-              padding: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.only(right: 8),
               child: ConnectionChip(
                 status: state.status,
                 hasResults: state.devices.isNotEmpty,
                 onTap: () => setState(() => _tab = _Tab.device),
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            tooltip: 'About',
+            onPressed: () async {
+              final info = await PackageInfo.fromPlatform();
+              if (!context.mounted) return;
+              showAboutDialog(
+              context: context,
+              applicationName: 'Empatica Data Collector',
+              applicationVersion: '${info.version}+${info.buildNumber}',
+              children: const [
+                Text(
+                  'Connects to an Empatica E4 wristband over Bluetooth LE and records its sensor data locally as CSV files.',
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'BVP is an unverified, reverse-engineered approximation. HR and IBI are self-derived from BVP '
+                  'peak detection, not device-native values.',
+                ),
+              ],
+              );
+            },
           ),
         ],
       ),

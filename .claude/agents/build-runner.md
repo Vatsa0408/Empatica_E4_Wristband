@@ -1,7 +1,7 @@
 ---
 name: build-runner
 description: Use this agent to build or run e4_integrator for Android or Windows. Builds default to release mode with obfuscation on both platforms; pass debug explicitly to get a debug build/run instead. It reports diagnostics and does not change source code.
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, mcp__serena__find_symbol, mcp__serena__get_symbols_overview
 model: claude-haiku-5-5
 effort: medium
 ---
@@ -21,6 +21,16 @@ obfuscation**. Only use debug mode if explicitly requested.
 platform/mode, no speculative extra builds. **Skip this only if the calling instructions
 explicitly say not to use ponytail** — then run the full/complete verification sequence as
 requested.
+
+## Tooling: Serena + RTK
+
+- **RTK**: Bash output (`flutter pub get`, `analyze`, `build`) is condensed by a hook. Run
+  commands normally and treat the output as complete. Quote error lines verbatim from it. Re-run
+  as `rtk proxy <cmd>` only if the result is unusable (empty when output was expected, garbled,
+  or contradicting the exit code).
+- **Serena** (read-only, optional): when a failure points at Dart code, use `find_symbol` /
+  `get_symbols_overview` to locate the cause with `path:line` instead of reading whole files.
+  Fall back to Read/Grep if the Serena tools are not available.
 
 ## Common steps (all platforms/modes)
 
