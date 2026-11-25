@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide ConnectionState;
 
 import '../../bloc/connection_bloc.dart';
 import '../../bloc/recording_bloc.dart';
+import '../../transport/e4_ble_decoder.dart' show batteryCurveCalibrated;
 import '../format.dart';
 import '../signal_ranges.dart';
 import '../theme/e4_colors.dart';
@@ -18,6 +19,9 @@ IconData batteryIcon(int percent) {
 }
 
 Color batteryColor(int percent) => percent < 20 ? E4Colors.batteryLow : E4Colors.batteryNormal;
+
+/// Shows "Calibrating" until the curve is calibrated (never an uncalibrated %).
+String batteryLabel(int percent) => batteryCurveCalibrated ? '$percent%' : 'Calibrating';
 
 /// The dashboard's top control card: connection summary, Manual/Continuous
 /// mode toggle, status line, and Start/Stop.
@@ -78,7 +82,7 @@ class RecordingCard extends StatelessWidget {
                 Icon(batteryIcon(battery), size: 18, color: batteryColor(battery)),
                 const SizedBox(width: 4),
                 Text(
-                  '$battery%',
+                  batteryLabel(battery),
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: batteryColor(battery)),
                 ),
               ],
@@ -294,13 +298,16 @@ class BatteryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Battery', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                const Text('Onboard device power', style: TextStyle(fontSize: 11, color: E4Colors.neutralText)),
+                const Text('Estimated cell voltage', style: TextStyle(fontSize: 11, color: E4Colors.neutralText)),
                 const SizedBox(height: 6),
                 RangePill(status: rangeStatus, caption: rangeCaption),
               ],
             ),
           ),
-          Text('$percent%', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: color)),
+          Text(
+            batteryLabel(percent),
+            style: TextStyle(fontSize: batteryCurveCalibrated ? 26 : 16, fontWeight: FontWeight.w800, color: color),
+          ),
         ],
       ),
     );

@@ -45,9 +45,16 @@ The connection path, same on both platforms:
     (verified within 0.06 s against 3 real button presses in the 2026-11-02 capture). Tag
     timestamp = arrival time of the first BVP packet + `counter / 64`.
   - Battery: characteristic `0x3EB3` in service `0x3EB0`. The device has **no** `0x180F`
-    Battery Service. Payload layout is still undecoded: 13 x 10-bit values of ~985-993, only
-    ~2 packets per 6 min; a 10-bit ADC reading ~97% is speculative. The app's BAT value is a
-    placeholder.
+    Battery Service. 20-byte payload: bytes 0-17 (top nibble of byte 17) = 14 x 10-bit values,
+    MSB-first; low nibble of byte 17 = 4 zero pad bits (layout check); bytes 18-19 = BE16
+    packet counter, restarts at 1 per connection. One packet per ~280 s. All 154 values in
+    the captures lie in 983-996 (battery near full). Values are probably raw cell-voltage ADC
+    counts (medium confidence); the per-packet median is used to reject load dips. Decoder:
+    `decodeBatteryCounts` / `batteryFraction` in `e4_ble_decoder.dart`. The count-to-percent
+    curve (`batteryCountsCurve`, assumes 996 = 4.20 V, 806 = 3.4 V) is **provisional and
+    uncalibrated**: `batteryCurveCalibrated = false`, so the UI shows "Calibrating" instead of
+    a percentage. After a full-discharge capture, replace the curve and flip the flag. See
+    `docs/plan/e4-battery-decoding.md`.
   - Real sample rates (from the capture) are exactly nominal: BVP 64 Hz, ACC 32 Hz, EDA 4 Hz,
     TEMP 4 Hz. BVP carries 11 samples per packet (5.818 packets/s x 11 = 64.0 Hz); each
     sample is a pair of 7-bit values; only the EVEN field of each pair is used for BVP (a

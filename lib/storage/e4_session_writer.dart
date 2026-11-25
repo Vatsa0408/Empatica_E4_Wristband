@@ -157,8 +157,11 @@ Caveats (see project CLAUDE.md for full provenance):
   rows where no HR could be derived); IBI.csv has one row per detected beat.
 - BAT.csv is not part of Empatica's export format; it is a documented
   extension, written IBI-style (`<t0>, BAT` header, then `<elapsed>,<0..1>`
-  rows). Source is the E4-proprietary characteristic 0x3EB3, whose payload
-  layout is undecoded; the value is a placeholder, UNVERIFIED.
+  rows). Source: E4-proprietary characteristic 0x3EB3, 14 x 10-bit raw
+  battery ADC samples per packet (~1 packet / 280 s); each row value is the
+  packet median mapped to 0..1 through a PROVISIONAL, UNCALIBRATED voltage
+  curve (assumes 996 counts = 4.20 V). Trust it near full; below ~95% it is
+  unverified. t0 may precede session start (last reading before Start).
 - EDA.csv holds RAW ADC counts (uint16), NOT microsiemens: the conversion
   factor is firmware-internal and needs a calibration resistor to derive.
 - TEMP.csv is `raw / 500` (empirical), UNVERIFIED against a thermometer.

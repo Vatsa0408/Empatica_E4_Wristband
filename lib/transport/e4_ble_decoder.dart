@@ -87,6 +87,70 @@ int? decodeTagCounter(Uint8List packet) {
   return counter == data.getUint32(5, Endian.little) ? counter : null;
 }
 
+/// Battery (`0x3EB3`, service `0x3EB0`, GATT label "Battery"): 20-byte
+/// notification, ~1 per 280 s. Bytes 0..17 hold fourteen unsigned 10-bit
+/// fields packed MSB-first (140 bits), then 4 zero pad bits (low nibble of
+/// byte 17), then a big-endian u16 per-connection packet counter (bytes
+/// 18-19, starts at 1). Layout verified on 11 real packets
+/// (docs/plan/e4-battery-decoding.md). Fields read ~983-996 on a near-full
+/// cell and fall while streaming: taken as raw battery-voltage ADC samples
+/// (UNVERIFIED scaling).
+@visibleForTesting
+List<int> unpackBattery10Bit(Uint8List packet) {
+  final fields = <int>[];
+  var acc = 0;
+  var bits = 0;
+  for (var i = 0; i < 18 && fields.length < 14; i++) {
+    acc = (acc << 8) | packet[i];
+    bits += 8;
+    while (bits >= 10 && fields.length < 14) {
+      bits -= 10;
+      fields.add((acc >> bits) & 0x3FF);
+      acc &= (1 << bits) - 1;
+    }
+  }
+  return fields;
+}
+
+/// Lowest plausible median: ~2.95 V under the provisional 4.217 mV/count
+/// scaling, below the Li-ion protection cutoff, so the E4 could not be running.
+const int _batteryMinPlausibleCounts = 700;
+
+/// Median (upper, sorted[7]) of the 14 battery fields, or null if the packet
+/// is short, the pad nibble is non-zero (layout changed), or the value is
+/// implausible. Median, not mean: single fields dip 6-9 counts under load.
+int? decodeBatteryCounts(Uint8List packet) {
+  if (packet.length < 20 || (packet[17] & 0x0F) != 0) return null;
+  final fields = unpackBattery10Bit(packet)..sort();
+  final median = fields[fields.length ~/ 2];
+  return median < _batteryMinPlausibleCounts ? null : median;
+}
+
+/// Whether [batteryCountsCurve] has been calibrated against a full-discharge
+/// capture. The UI shows "Calibrating" instead of a percentage while false;
+/// flip to true after replacing the curve (docs/plan/e4-battery-decoding.md s9).
+const bool batteryCurveCalibrated = false;
+
+/// Counts -> 0..1 state-of-charge, piecewise linear, descending counts.
+/// ponytail: PROVISIONAL. Assumes counts are proportional to volts with
+/// 996 ~ 4.20 V (4.217 mV/count); points = 4.20 V/1.0, 3.95 V/0.94,
+/// 3.55 V/0.0625, 3.40 V/0.0 (Adafruit + Zephyr LiPo curves). Replace rows
+/// with measured (counts, fraction) pairs from a full-discharge capture —
+/// this table is the only calibration knob.
+const List<(int, double)> batteryCountsCurve = [(996, 1.0), (937, 0.94), (842, 0.0625), (806, 0.0)];
+
+double batteryFraction(int counts, {List<(int, double)> curve = batteryCountsCurve}) {
+  if (counts >= curve.first.$1) return curve.first.$2;
+  for (var i = 1; i < curve.length; i++) {
+    final (hiCounts, hiFraction) = curve[i - 1];
+    final (loCounts, loFraction) = curve[i];
+    if (counts >= loCounts) {
+      return loFraction + (counts - loCounts) / (hiCounts - loCounts) * (hiFraction - loFraction);
+    }
+  }
+  return curve.last.$2;
+}
+
 const List<double> _firCoefficients = [0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05];
 const double _bvpScaleFactor = 10.0;
 

@@ -421,16 +421,20 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         deviceId: deviceId,
         transportDescription: 'Direct BLE (universal_ble), reverse-engineered E4 GATT characteristics — see CLAUDE.md',
       );
+      // Keep the pre-start battery reading (packets are ~280 s apart) and
+      // write it into the new session; BAT.csv t0 = its own arrival time.
+      final battery = _latest[E4Signal.battery];
       _writer = writer;
       _counts = {};
-      _latest = {};
+      _latest = {E4Signal.battery: ?battery};
+      if (battery != null) await writer.write(battery);
       emit(
         state.copyWith(
           status: RecordingStatus.recording,
           sessionPath: dir.path,
           startedAt: DateTime.now(),
           counts: const {},
-          latest: const {},
+          latest: Map.of(_latest),
           clearError: true,
         ),
       );

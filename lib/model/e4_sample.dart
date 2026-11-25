@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 /// The eight signals an Empatica E4 produces. [bvp], [eda], [acc] and [temp]
 /// have known BLE characteristics (see [CLAUDE.md]); [hr] and [ibi] are derived
 /// offline from [bvp] (see `transport/e4_ble_decoder.dart`), [battery] comes
-/// from the E4-proprietary char 0x3EB3 (payload layout still undecoded), and
+/// from the E4-proprietary char 0x3EB3 (14 x 10-bit ADC fields; % provisional), and
 /// [tag] (the physical button) comes from char 0x3EB2.
 enum E4Signal { acc, bvp, eda, hr, ibi, temp, tag, battery }
 

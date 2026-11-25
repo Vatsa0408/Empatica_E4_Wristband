@@ -19,7 +19,7 @@ const String _edaCharUuid = '00003ea8-0000-1000-8000-00805f9b34fb';
 
 /// E4-proprietary notify chars in service 0x3EB0 (the service UUID is resolved
 /// from the device's own service map). 0x3EB2 is the tag/button path (decoded
-/// by [decodeTagCounter]); the battery payload layout (0x3EB3) is undecoded.
+/// by [decodeTagCounter]); 0x3EB3 is battery (see [decodeBatteryCounts]).
 const String _tagCharUuid = '00003eb2-0000-1000-8000-00805f9b34fb';
 const String _batteryCharUuid = '00003eb3-0000-1000-8000-00805f9b34fb';
 
@@ -31,8 +31,8 @@ const String _deviceNamePrefix = 'Empatica E4';
 /// Direct-BLE transport, the only transport on both Android and Windows
 /// (Empatica's Windows E4 Streaming Server is permanently inoperative — see
 /// CLAUDE.md). Covers BVP/EDA/ACC/TEMP via known characteristics, derives
-/// HR/IBI offline from BVP, and makes a best-effort attempt at battery via
-/// the E4-proprietary char 0x3EB3. Tags (the physical button) come from 0x3EB2.
+/// HR/IBI offline from BVP, and decodes battery from the E4-proprietary char
+/// 0x3EB3 (provisional, uncalibrated %). Tags (the physical button) come from 0x3EB2.
 class BleTransport implements E4Transport {
   final StreamController<E4Sample> _samplesController = StreamController<E4Sample>.broadcast();
   final StreamController<bool> _connectedController = StreamController<bool>.broadcast();
@@ -300,10 +300,13 @@ class BleTransport implements E4Transport {
   }
 
   void _onBattery(Uint8List bytes) {
-    if (bytes.isEmpty) return;
-    // ponytail: layout undecoded (reference: 0..1 ratio, sometimes 0..100);
-    // bytes[0]/100 clamped is a placeholder until raw logs show the real one.
-    final level = (bytes[0] / 100.0).clamp(0.0, 1.0);
+    final counts = decodeBatteryCounts(bytes);
+    if (counts == null) {
+      _rawLine('[E4 RAW] battery packet not recognised (layout/plausibility); skipped');
+      return;
+    }
+    final level = batteryFraction(counts);
+    _rawLine('[E4 RAW] battery median=$counts level=${level.toStringAsFixed(3)}');
     _samplesController.add(E4Sample(signal: E4Signal.battery, timestamp: _now(), values: [level]));
   }
 }

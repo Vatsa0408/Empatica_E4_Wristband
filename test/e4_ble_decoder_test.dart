@@ -10,7 +10,64 @@ import 'package:flutter_test/flutter_test.dart';
 
 Uint8List _bytes(List<int> values) => Uint8List.fromList(values);
 
+Uint8List _hex(String s) => Uint8List.fromList(s.split(' ').map((h) => int.parse(h, radix: 16)).toList());
+
+// Real 0x3EB3 packets from reports/ (docs/plan/e4-battery-decoding.md s4.2).
+const _p1 = 'f8 7e 1f 87 e1 f8 7e 1f 87 e1 f8 7e 1f 87 e1 f8 7e 00 00 01';
+const _p2 = 'f8 3e 1f 67 e1 f8 7d ff 83 df f7 fe 0f 83 df f8 3e 00 00 02';
+const _p3 = 'f8 be 2f 8b e2 f8 be 2f 8b e2 f8 be 2f 8b e2 f8 be 20 00 01';
+const _realBatteryPackets = [
+  _p1,
+  _p2,
+  _p3,
+  'f8 fe 3f 8b e3 f7 3e 1f 8f e2 f8 be 2f 8b e1 f8 fe 30 00 02',
+  'f8 fe 3f 8f e3 f8 fe 3f 8f e3 f8 fe 3f 8f e3 f8 fe 30 00 01',
+  'f9 3e 4f 83 e4 f9 3e 3f 93 e2 f8 be 3f 8f e2 f8 be 30 00 02',
+  'f8 be 2f 8b e2 f8 be 2f 8b e2 f8 be 2f 8b e2 f8 be 10 00 01',
+  'f8 bd af 87 e3 f8 7e 0f 87 e0 f7 fd ff 63 e0 f7 fe 00 00 02',
+  'f7 fe 1f 87 df f6 bd ff 6b e0 f7 7d ff 83 df f7 bd f0 00 03',
+  'f6 7d 7f 7f df f7 bd ff 7b d7 f7 fd ef 77 de f7 7d d0 00 04',
+  'f6 fd bf 6f d9 f6 fd cf 67 db f6 bd af 6f da f6 7d a0 00 01',
+];
+
 void main() {
+  group('battery', () {
+    test('layout: constant packet unpacks to 14 identical fields', () {
+      expect(unpackBattery10Bit(_hex(_p3)), List.filled(14, 994));
+    });
+
+    test('layout: newest slot (f13) differs, proving it spans byte 17 high nibble', () {
+      expect(unpackBattery10Bit(_hex(_p1)), [...List.filled(13, 993), 992]);
+    });
+
+    test('layout: varied packet', () {
+      expect(unpackBattery10Bit(_hex(_p2)), [992, 993, 985, 993, 993, 991, 992, 991, 991, 992, 992, 991, 992, 992]);
+    });
+
+    test('medians on all 11 real packets', () {
+      expect(_realBatteryPackets.map((p) => decodeBatteryCounts(_hex(p))), [993, 992, 994, 994, 995, 995, 994, 992, 991, 990, 987]);
+    });
+
+    test('mapping: clamps, knee, monotonic', () {
+      expect(batteryFraction(996), 1.0);
+      expect(batteryFraction(1023), 1.0);
+      expect(batteryFraction(937), closeTo(0.94, 1e-9));
+      expect(batteryFraction(806), 0.0);
+      expect(batteryFraction(750), 0.0);
+      expect(batteryFraction(994), inInclusiveRange(0.99, 1.0));
+      for (var c = 700; c <= 1023; c++) {
+        expect(batteryFraction(c), greaterThanOrEqualTo(batteryFraction(c - 1)));
+      }
+    });
+
+    test('rejection: short, non-zero pad nibble, implausible all-zero; none throw', () {
+      expect(decodeBatteryCounts(_hex(_p3).sublist(0, 19)), isNull);
+      final badPad = _hex(_p3)..[17] = 0x21;
+      expect(decodeBatteryCounts(badPad), isNull);
+      expect(decodeBatteryCounts(Uint8List(20)), isNull);
+    });
+  });
+
   group('decodeEda', () {
     test('20-byte packet decodes six uint16 BE raw samples, skipping 0xAC flag', () {
       const rawValues = [3500, 7000, 0, 65535, 4660, 100];

@@ -122,7 +122,7 @@ class _DashboardBody extends StatelessWidget {
         rangeStatus: _status(E4Signal.ibi, recordingState.ibi),
         rangeCaption: _caption(E4Signal.ibi),
       ),
-      if (batteryPercent != null)
+      if (batteryPercent != null && connectionState.status == ConnectionStatus.connected)
         BatteryCard(
           percent: batteryPercent,
           rangeStatus: rangeStatusFor(E4Signal.battery, batteryPercent.toDouble()),

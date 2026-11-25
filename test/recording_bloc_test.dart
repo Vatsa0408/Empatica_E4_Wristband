@@ -153,6 +153,26 @@ void main() {
     await blocs.connection.close();
   });
 
+  test('a battery reading received before Start is kept and written to the new BAT.csv', () async {
+    final blocs = build();
+    final bloc = blocs.recording;
+    await connect(blocs.connection);
+
+    const t = 1793617522.226;
+    samplesController.add(const E4Sample(signal: E4Signal.battery, timestamp: t, values: [0.9]));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    bloc.add(const StartRequested());
+    await _settle();
+
+    expect(bloc.state.latest[E4Signal.battery], isNotNull);
+    final bat = await File('${bloc.state.sessionPath}/BAT.csv').readAsLines();
+    expect(bat, ['${t.toStringAsFixed(6)}, BAT', '0.000000,0.900000']);
+
+    await bloc.close();
+    await blocs.connection.close();
+  });
+
   test('a mode change while recording closes the old session first', () async {
     final blocs = build();
     final bloc = blocs.recording;
